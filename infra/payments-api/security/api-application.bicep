@@ -6,8 +6,6 @@ extension 'br:mcr.microsoft.com/bicep/extensions/microsoftgraph/v1.0:0.1.9-previ
 metadata description = 'Creates a an application registration and client service principal for an API'
 param applicationUniqueName string
 param applicationClientUniqueName string
-param keyVaultName string
-param keyExpiry string = dateTimeAdd(utcNow('u'), 'P60D')
 param name string
 param existingAppClientApplicationId string = ''
 param existingAppClientObjectId string = ''
@@ -142,32 +140,13 @@ resource clientApp 'Microsoft.Graph/applications@v1.0' = if (newOrExisting == 'n
 			]
 		}
   ]
-  passwordCredentials:  [
-    {
-      displayName: 'Client Secret for OAuth'
-      endDateTime: keyExpiry
-    }
-  ] 
 }
 
 var appClientKeyVaultSecretName = '${applicationClientUniqueName}-secret'
-resource appClientSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = if (newOrExisting == 'new'){
-  parent: keyVault
-  name: appClientKeyVaultSecretName
-  properties: {
-    value: clientApp.passwordCredentials[0].secretText
-  }
-}
-
 // Used when we want to assign roles to the client app to use from a custom connector service principal
 resource clientSp 'Microsoft.Graph/servicePrincipals@v1.0' =  if (newOrExisting == 'new'){
   appId: clientApp.appId
 }
-
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: keyVaultName
-}
-
 
 // Add outputs from the deployment here, if needed.
 output appId string = apiApplication.appId

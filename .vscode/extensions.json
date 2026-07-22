@@ -1,12 +1,6 @@
 {
-    "recommendations": [
-      "microsoft-isvexptools.powerplatform-vscode",
-      "ms-azuretools.vscode-bicep",
-      "dbaeumer.vscode-eslint",
-      "github.vscode-github-actions",
-      "firsttris.vscode-jest-runner",
-      "ms-vscode.powershell",
-      "ms-vscode.vscode-node-azure-pack",
-    ]
-  }
-  
+  "recommendations": [
+    "ms-azuretools.vscode-azurefunctions",
+    "ms-dotnettools.csharp"
+  ]
+}

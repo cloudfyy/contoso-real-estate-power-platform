@@ -10,8 +10,6 @@ param applicationInsightsName string
 param managedIdentity bool = !empty(keyVaultName) || storageManagedIdentity
 param storageManagedIdentity bool = false
 param apiApplicationID string
-@secure()
-param appClientKeyVaultSecretName string
 
 resource hostingPlan 'Microsoft.Web/serverfarms@2021-03-01' existing = {
   name: appServicePlanName
@@ -34,21 +32,28 @@ module api './api-host.bicep' = {
     apiApplicationID: apiApplicationID
     // Requires access to the vault
     // See https://learn.microsoft.com/en-us/azure/azure-resource-manager/managed-applications/key-vault-access
-    apiAppicationSecret: keyVault.getSecret(appClientKeyVaultSecretName)
+    apiAppicationSecret: 'set-by-postprovision-hook'
     managedIdentity: managedIdentity
+    storageManagedIdentity: storageManagedIdentity
     hostingPlanId: hostingPlan.id
     }
   }
 
-module storageOwnerRole '../core/security/role.bicep' = if (storageManagedIdentity) {
-  name: 'search-index-contrib-role-api'
+var builtInStorageRoles = [
+  builtInRoles.StorageBlobDataOwner
+  builtInRoles.StorageQueueDataContributor
+  builtInRoles.StorageTableDataContributor
+  builtInRoles.StorageFileDataSMBShareContributor
+]
+
+module storageRoles '../core/security/role.bicep' = [for roleId in builtInStorageRoles: if (storageManagedIdentity) {
+  name: 'storage-role-api-${roleId}'
   params: {
     principalId: api.outputs.identityPrincipalId
-    // Search Index Data Contributor
-    roleDefinitionId: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
+    roleDefinitionId: roleId
     principalType: 'ServicePrincipal'
   }
-}
+}]
 
 var builtInRoles = loadJsonContent('../built-in-roles.json')
 

@@ -110,7 +110,6 @@ module apiApplication './payments-api/security/api-application.bicep' = {
     name: 'Contoso Real Estate Payments API (${resourcesPrefix}-payments-api)'
     applicationUniqueName: '${resourcesPrefix}-payments-api'
     applicationClientUniqueName: '${resourcesPrefix}-payments-api-client'
-    keyVaultName: keyVault.outputs.name
     // Set newOrExisting based on if entraApiClientAppId is empty or not
     existingAppClientApplicationId:entraApiClientAppId
     existingAppClientObjectId:entraApiClientObjectId
@@ -190,7 +189,7 @@ module api './payments-api/payments-api.bicep' = {
     appServicePlanName: appServicePlan.outputs.name
     keyVaultName: keyVault.outputs.name
     apiApplicationID: apiApplication.outputs.appId
-    appClientKeyVaultSecretName: apiApplication.outputs.appClientKeyVaultSecretName
+    storageManagedIdentity: true
     }
   }
 
