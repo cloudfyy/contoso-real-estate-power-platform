@@ -8,12 +8,14 @@ The Contoso Real Estate (Power Platform Edition) project utilizes several Azure 
    - **Dataverse Virtual Table Provider** C# Plugin to expose the Payments as a Dataverse Virtual Table
    - **Webhook** that is called by Stripe when payments events are raised
 2. **Azure SQL Database** - Stores the payments made via Stripe
+   - The SQL server is deployed with Entra ID-only authentication enabled and public network access disabled. SQL administrator login/password authentication is not used.
 3. **Azure Key Vault** - Used to store all secrets that are necessary and is configured as the backing for Power Platform Environment Variable secrets.
     - `AZURE-SQL-CONNECTION-STRING-payments-api` - SQL connection string for the Payments database. This does not contain any login username or password because the Azure Function uses a Managed Identity to connect to the database. E.g. `Server=tcp:sql-***.database.windows.net,1433;Initial Catalog=contoso-real-estate;`. [Learn about Managed Identities in Azure Functions](https://learn.microsoft.com/en-us/azure/azure-functions/security-concepts)
     - `cre-..-development-payments-api-client-secret`- Custom Connector Client Secret that is referenced by the Power Platform Environment Variable Secret and used in the custom connectors.
     - `StripeApiKey` - The Stripe API key to use for payment processing
     - `StripeWebhookSecret` - The Stripe webhook secret to use for verifying webhook events
-4. **Entra ID Application registrations** used to authenticate Power Platform against the Payments API
+4. **Azure Storage Account** - Used by the Azure Functions runtime. Shared key access is disabled and the Function App uses managed identity for storage access.
+5. **Entra ID Application registrations** used to authenticate Power Platform against the Payments API. The client application secret is generated after provisioning by the `postprovision` hook and stored in Key Vault.
 
 > [!NOTE]
 > For a full end-to-end set of instructions on how to install prerequisites, clone, build, deploy, and test the solutions, refer to [full-development-setup-instructions.md](./docs/00-full-development-setup-instructions.md).
@@ -112,7 +114,7 @@ Here are the steps to deploy the Azure resources using `azd up`:
 > [!IMPORTANT]
 > When selecting a Azure location to deploy into, avoid using WEST US 2 due to there often being resource capacity limitations.
 
-14. When prompted for the 'principalLoginName' infrastructure parameter, enter your Power Platform username e.g. `some.user@myenvironment.omicrosoft.com`. This will be stored in a file called `.azure/<environmentname>/config.json`. It is important to ensure that this user name is the one you have authenticated against Azure with. It will be used to set the administrator of the SQL Server.
+14. When prompted for the 'principalLoginName' infrastructure parameter, enter your Power Platform username e.g. `some.user@myenvironment.omicrosoft.com`. This will be stored in a file called `.azure/<environmentname>/config.json`. It is important to ensure that this user name is the one you have authenticated against Azure with. It will be used to set the Entra administrator of the SQL Server.
 
 > [!NOTE]
 > If you want to deploy updates to the code later on after the infrastructure has been published you can use `azd deploy`
@@ -126,7 +128,7 @@ Here are the steps to deploy the Azure resources using `azd up`:
 
 Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyond the scope of this sample). To complete the deployment the following tasks must be carried out:
 
-- Grant the Azure Function Payment API managed identity access to SQL Server. The Azure Functions run under a System Assigned Managed Identity (SAMI). This identity must be added to the SQL Server as an external user. This cannot be performed by a SQL Login (inside the bicep script), because it needs access to Entra ID.
+- TODO: Define the SQL database initialization process for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and that identity must be added to the database as an external user before the Payments API can read or write payment data.
 - Add admin consent to the Payment API client Entra ID Application registration, so that it can be used as an SPN connection in Power Platform
 - Grant your user access to the Payment API so that it can be used as an OAuth user connection in Power Platform for testing.
 
@@ -179,18 +181,6 @@ To create a managed identity for the Azure Function:
 1. Select the role `Key Vault Secrets User`
 1. Select `Save`
 
-### Give the managed identity access to the database
-1. Open the Azure SQL Database in Management Studio
-1. Run the following SQL command to create a user for the managed identity:
+### TODO: Give the managed identity access to the database
 
-```sql
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = N'AzureFunctionAppName')
-BEGIN
-    CREATE USER [AzureFunctionAppName] FROM EXTERNAL PROVIDER;
-END
-ALTER ROLE db_datareader ADD MEMBER [AzureFunctionAppName];
-ALTER ROLE db_datawriter ADD MEMBER [AzureFunctionAppName];
-```
-
-> [!NOTE]
-> Replace **AzureFunctionAppName** with the name of the Managed Identity created for the Azure Function App.
+The SQL database initialization steps for Entra ID-only deployments still need to be defined.
