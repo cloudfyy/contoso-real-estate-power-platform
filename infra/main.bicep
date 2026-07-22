@@ -29,9 +29,6 @@ param principalLoginName string
 param entraApiClientAppId string = ''
 param entraApiClientObjectId string = ''
 
-@secure()
-param paymentsDatabaseAdminPassword string
-
 // Overrides
 param keyVaultName string = ''
 param appServicePlanName string = ''
@@ -130,12 +127,14 @@ module storageAccount './core/storage/storage-account.bicep' = {
     }
     kind: 'Storage'
     defaultToOAuthAuthentication: true
+    allowSharedKeyAccess: false
     allowCrossTenantReplication: false
     allowBlobPublicAccess: false
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Allow'
     }
+    publicNetworkAccess: 'Disabled'
     supportsHttpsTrafficOnly: true
     
   }
@@ -208,11 +207,9 @@ module sqlServer './payments-api/database/sqlserver.bicep' = {
     serverName: '${resourcesPrefix}-sql'
     sqlDBName: '${resourcesPrefix}-payments-sql-db'
     location: location
-    administratorLoginPassword: paymentsDatabaseAdminPassword
     principalId: principalId
     principalLoginName: principalLoginName
     keyVaultName: keyVault.outputs.name
-    appManagedIdentityName: api.outputs.SERVICE_API_NAME
   }
 } 
 // Add outputs from the deployment here, if needed.

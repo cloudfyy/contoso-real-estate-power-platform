@@ -71,7 +71,6 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
       FUNCTIONS_WORKER_RUNTIME: 'dotnet'
       WEBSITE_RUN_FROM_PACKAGE: '1'
       FUNCTIONS_INPROC_NET8_ENABLED: '1'
-      WEBSITE_CONTENTSHARE: appService.name
       MICROSOFT_PROVIDER_AUTHENTICATION_SECRET: apiAppicationSecret
       netFrameworkVersion: 'v4.0'
       minimumElasticInstanceCount: 0
@@ -79,13 +78,14 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
       WEBSITE_AUTH_AAD_ALLOWED_TENANTS: tenant().tenantId // This sets the 'Allow requests from specific tenants' setting on the authconfig added below
       
     },
+    storageManagedIdentity ? {} : {
+      WEBSITE_CONTENTSHARE: appService.name
+      WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: storageAccountConnection
+    },
     storageManagedIdentity ? {
-      WEBSITE_CONTENTAZUREFILECONNECTIONSTRING__accountName: storageAccount.name
-      WEBSITE_CONTENTAZUREFILECONNECTIONSTRING__credential: 'managedidentity'
       AzureWebJobsStorage__accountName: storageAccount.name
       AzureWebJobsStorage__credential: 'managedidentity'
     } : {
-      WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: storageAccountConnection
       AzureWebJobsStorage: storageAccountConnection
     },
     !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},

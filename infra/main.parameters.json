@@ -19,9 +19,6 @@
       },
       "entraApiClientObjectId":{
         "value": "${ENTRA_API_CLIENT_OBJECT_ID}"
-      },
-      "paymentsDatabaseAdminPassword": {
-        "value": "$(secretOrRandomPassword)"
       }
     }
 }
