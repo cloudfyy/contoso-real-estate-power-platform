@@ -10,6 +10,7 @@ param applicationInsightsName string
 param managedIdentity bool = !empty(keyVaultName) || storageManagedIdentity
 param storageManagedIdentity bool = false
 param apiApplicationID string
+param virtualNetworkSubnetId string = ''
 
 resource hostingPlan 'Microsoft.Web/serverfarms@2021-03-01' existing = {
   name: appServicePlanName
@@ -35,6 +36,7 @@ module api './api-host.bicep' = {
     apiAppicationSecret: 'set-by-postprovision-hook'
     managedIdentity: managedIdentity
     storageManagedIdentity: storageManagedIdentity
+    virtualNetworkSubnetId: virtualNetworkSubnetId
     hostingPlanId: hostingPlan.id
     }
   }

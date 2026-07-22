@@ -45,7 +45,7 @@ $appId = $envVars.ENTRA_API_APP_ID
 # Assign the roles to the current user for testing
 Write-Host "Granting access to the Payment API for the current user" -ForegroundColor Green
 $currentUserPrincipalId=$(az ad signed-in-user show --query id -o tsv)
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions" -principalId $currentUserPrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase" -principalId $currentUserPrincipalId -appId $appId
 
 # The Client for Contoso Real Estate Payments API needs admin consent if it's used as a service principal to access the API
 Write-Host "Granting access to the Payment API for the SPN used in connections" -ForegroundColor Green

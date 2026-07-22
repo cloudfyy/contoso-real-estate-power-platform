@@ -128,7 +128,7 @@ Here are the steps to deploy the Azure resources using `azd up`:
 
 Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyond the scope of this sample). To complete the deployment the following tasks must be carried out:
 
-- TODO: Define the SQL database initialization process for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and that identity must be added to the database as an external user before the Payments API can read or write payment data.
+- Initialize the SQL database for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and a protected initialization endpoint creates the database user, role membership, and payments table.
 - Add admin consent to the Payment API client Entra ID Application registration, so that it can be used as an SPN connection in Power Platform
 - Grant your user access to the Payment API so that it can be used as an OAuth user connection in Power Platform for testing.
 
@@ -181,6 +181,14 @@ To create a managed identity for the Azure Function:
 1. Select the role `Key Vault Secrets User`
 1. Select `Save`
 
-### TODO: Give the managed identity access to the database
+### Initialize the database with the Function API
 
-The SQL database initialization steps for Entra ID-only deployments still need to be defined.
+The SQL server has public network access disabled, so initialization must run from inside Azure. The Payments API Function App is integrated with the SQL private endpoint network and exposes a protected initialization endpoint at `POST /api/admin/initialize-sql`.
+
+The endpoint is disabled by default. The initialization script temporarily adds the Function App managed identity to the SQL Entra admin group, enables the endpoint, calls it, disables the endpoint, and then removes the temporary admin membership.
+
+```powershell
+./infra/scripts/initialize-sql-via-function.ps1 -azureEnv development
+```
+
+After initialization, the Function App managed identity keeps only its database-level permissions and no longer needs to remain a SQL Entra administrator.

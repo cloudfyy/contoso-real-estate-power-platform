@@ -16,6 +16,8 @@ param connectionStringKey string = 'AZURE-SQL-CONNECTION-STRING-${applicationUni
 param principalLoginName string
 param principalId string
 param keyVaultName string
+param privateEndpointSubnetId string = ''
+param sqlPrivateDnsZoneId string = ''
 
 resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
   name: serverName
@@ -43,6 +45,42 @@ resource database 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
   sku: {
     name: 'Basic'
     tier: 'Basic'
+  }
+}
+
+resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (!empty(privateEndpointSubnetId)) {
+  name: '${serverName}-pe'
+  location: location
+  properties: {
+    subnet: {
+      id: privateEndpointSubnetId
+    }
+    privateLinkServiceConnections: [
+      {
+        name: '${serverName}-sql'
+        properties: {
+          privateLinkServiceId: sqlServer.id
+          groupIds: [
+            'sqlServer'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+resource sqlPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (!empty(privateEndpointSubnetId) && !empty(sqlPrivateDnsZoneId)) {
+  parent: sqlPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-database-windows-net'
+        properties: {
+          privateDnsZoneId: sqlPrivateDnsZoneId
+        }
+      }
+    ]
   }
 }
 

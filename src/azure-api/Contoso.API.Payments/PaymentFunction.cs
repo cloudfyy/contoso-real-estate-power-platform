@@ -30,7 +30,8 @@ namespace Contoso.API.Payments;
 enum PaymentAppRoles
 {
     CanQueryPayments,
-    CanAddPayments
+    CanAddPayments,
+    CanInitializePaymentsDatabase
 }
 public class PaymentFunction
 {
@@ -174,6 +175,49 @@ public class PaymentFunction
         }
     }
 
+    [FunctionName("initializePaymentsDatabase")]
+    [OpenApiOperation(operationId: "initializePaymentsDatabase", tags: new[] { "admin" }, Summary = "Initialize payments database", Description = "Initializes the payments database for Entra ID-only SQL deployments")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.OK, Description = "OK - Database initialized")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Initialization endpoint is disabled")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
+    public async Task<IActionResult> InitializePaymentsDatabase(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/initialize-sql")] HttpRequest _, ClaimsPrincipal principal)
+    {
+        try
+        {
+            if (!bool.TryParse(_configuration["SQL_INITIALIZATION_ENABLED"], out bool initializationEnabled) || !initializationEnabled)
+            {
+                return new NotFoundResult();
+            }
+
+            principal.AssertUserInRoles(PaymentAppRoles.CanInitializePaymentsDatabase.ToString());
+
+            var managedIdentityName = _configuration["SQL_MANAGED_IDENTITY_USER_NAME"];
+            if (string.IsNullOrWhiteSpace(managedIdentityName))
+            {
+                managedIdentityName = _configuration["WEBSITE_SITE_NAME"];
+            }
+
+            if (string.IsNullOrWhiteSpace(managedIdentityName))
+            {
+                throw new InvalidOperationException("SQL managed identity user name was not configured.");
+            }
+
+            await InitializePaymentsDatabaseInternal(managedIdentityName);
+            return new OkObjectResult(new { message = "Payments database initialized." });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogWarning(ex, $"initializePaymentsDatabase unauthorized access attempt. {ex.Message}");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "initializePaymentsDatabase function: error occurred");
+            return new StatusCodeResult((int)HttpStatusCode.InternalServerError);
+        }
+    }
+
     internal async Task<IEnumerable<Payment>> ListPaymentsInternal(FilterClause filter, OrderByClause orderby, long? top, long? skip)
     {
         var query = new Query("dbo.payment")
@@ -286,6 +330,69 @@ public class PaymentFunction
         return payment.Id;
     }
 
+    internal async Task InitializePaymentsDatabaseInternal(string managedIdentityName)
+    {
+        await using SqlConnection sqlConnection = await Connect();
+        await using SqlCommand command = sqlConnection.CreateCommand();
+        var managedIdentityLiteral = EscapeSqlLiteral(managedIdentityName);
+        var managedIdentityIdentifier = QuoteSqlIdentifier(managedIdentityName);
+        command.CommandText = $@"
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = N'{managedIdentityLiteral}')
+BEGIN
+    EXEC(N'CREATE USER {managedIdentityIdentifier} FROM EXTERNAL PROVIDER');
+END
+
+IF NOT EXISTS (
+    SELECT *
+    FROM sys.database_role_members members
+    INNER JOIN sys.database_principals roles ON members.role_principal_id = roles.principal_id
+    INNER JOIN sys.database_principals users ON members.member_principal_id = users.principal_id
+    WHERE roles.name = N'db_datareader' AND users.name = N'{managedIdentityLiteral}'
+)
+BEGIN
+    EXEC(N'ALTER ROLE [db_datareader] ADD MEMBER {managedIdentityIdentifier}');
+END
+
+IF NOT EXISTS (
+    SELECT *
+    FROM sys.database_role_members members
+    INNER JOIN sys.database_principals roles ON members.role_principal_id = roles.principal_id
+    INNER JOIN sys.database_principals users ON members.member_principal_id = users.principal_id
+    WHERE roles.name = N'db_datawriter' AND users.name = N'{managedIdentityLiteral}'
+)
+BEGIN
+    EXEC(N'ALTER ROLE [db_datawriter] ADD MEMBER {managedIdentityIdentifier}');
+END
+
+IF OBJECT_ID(N'dbo.payment', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.payment
+    (
+        id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_payment PRIMARY KEY,
+        userId nvarchar(256) NULL,
+        reservationId nvarchar(256) NULL,
+        provider int NOT NULL,
+        status int NOT NULL,
+        amount decimal(18, 2) NOT NULL,
+        currency nvarchar(16) NULL,
+        createdAt datetime2 NOT NULL
+    );
+END;
+";
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string QuoteSqlIdentifier(string value)
+    {
+        return $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
+    }
+
+    private static string EscapeSqlLiteral(string value)
+    {
+        return value.Replace("'", "''", StringComparison.Ordinal);
+    }
+
     
 
     private async Task<SqlConnection> Connect()
@@ -296,7 +403,7 @@ public class PaymentFunction
         var sqlConnection = new SqlConnection(sqlConnectionString);
         var accessToken = await credential.GetTokenAsync(new TokenRequestContext(new[] { "https://database.windows.net//.default" }), CancellationToken.None);
         sqlConnection.AccessToken = accessToken.Token;
-        this._logger.LogInformation($"listPayments function: aquired token {accessToken.Token}");
+        this._logger.LogInformation("SQL access token acquired.");
         await sqlConnection.OpenAsync();
         return sqlConnection;
     }

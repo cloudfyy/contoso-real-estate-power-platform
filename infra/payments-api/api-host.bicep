@@ -11,6 +11,7 @@ param allowedOrigins array = []
 param storageAccountName string
 param appSettings object = {}
 param storageManagedIdentity bool = false
+param virtualNetworkSubnetId string = ''
 
 param apiApplicationID string
 @secure()
@@ -39,10 +40,12 @@ resource appService 'Microsoft.Web/sites@2021-03-01' = {
     serverFarmId: hostingPlanId
     siteConfig: {
       minTlsVersion: '1.2'
+      vnetRouteAllEnabled: !empty(virtualNetworkSubnetId)
       cors: {
         allowedOrigins: union([ 'https://portal.azure.com', 'https://ms.portal.azure.com' ], allowedOrigins)
       }
     }
+    virtualNetworkSubnetId: !empty(virtualNetworkSubnetId) ? virtualNetworkSubnetId : null
   }
   resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
     name: 'ftp'
@@ -76,6 +79,8 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
       minimumElasticInstanceCount: 0
       httpsOnly: true
       WEBSITE_AUTH_AAD_ALLOWED_TENANTS: tenant().tenantId // This sets the 'Allow requests from specific tenants' setting on the authconfig added below
+      SQL_INITIALIZATION_ENABLED: 'false'
+      SQL_MANAGED_IDENTITY_USER_NAME: name
       
     },
     storageManagedIdentity ? {} : {

@@ -140,6 +140,16 @@ module storageAccount './core/storage/storage-account.bicep' = {
   }
 }
 
+module privateSqlAccess './payments-api/network/private-sql-access.bicep' = {
+  name: 'private-sql-access'
+  scope: rg
+  params: {
+    namePrefix: resourcesPrefix
+    location: location
+    tags: tags
+  }
+}
+
 // Create an App Service Plan to group applications under the same payment plan and SKU
 module appServicePlan './core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
@@ -149,13 +159,13 @@ module appServicePlan './core/host/appserviceplan.bicep' = {
     location: location
     tags: tags
     reserved:false
-    kind: 'functionapp'
+    kind: 'elastic'
     sku: {
-      name: 'Y1'
-      tier: 'Dynamic'
-      family: 'Y1'
-      size: 'Y1'
-      capacity: 0
+      name: 'EP1'
+      tier: 'ElasticPremium'
+      family: 'EP'
+      size: 'EP1'
+      capacity: 1
     }
   }
 }
@@ -189,6 +199,7 @@ module api './payments-api/payments-api.bicep' = {
     keyVaultName: keyVault.outputs.name
     apiApplicationID: apiApplication.outputs.appId
     storageManagedIdentity: true
+    virtualNetworkSubnetId: privateSqlAccess.outputs.functionSubnetId
     }
   }
 
@@ -210,6 +221,8 @@ module sqlServer './payments-api/database/sqlserver.bicep' = {
     principalId: principalId
     principalLoginName: principalLoginName
     keyVaultName: keyVault.outputs.name
+    privateEndpointSubnetId: privateSqlAccess.outputs.privateEndpointSubnetId
+    sqlPrivateDnsZoneId: privateSqlAccess.outputs.sqlPrivateDnsZoneId
   }
 } 
 // Add outputs from the deployment here, if needed.

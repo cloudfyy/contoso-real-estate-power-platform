@@ -17,6 +17,7 @@ var scopeId = guid(resourceGroup().id, applicationUniqueName, 'user_impersonatio
 var canCreateStripeSessionsAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanCreateStripeSessions')
 var canQueryPaymentsAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanQueryPayments')
 var canAddPaymentsAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanAddPayments')
+var canInitializePaymentsDatabaseAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanInitializePaymentsDatabase')
 
 // Define the Entra ID application registration
 // https://learn.microsoft.com/en-us/graph/templates/reference/applications?view=graph-bicep-1.0
@@ -73,6 +74,16 @@ resource apiApplication 'Microsoft.Graph/applications@v1.0' = {
       displayName: 'Can Add Payments'
       isEnabled: true
       value: 'CanAddPayments'
+    }
+    {
+      id: canInitializePaymentsDatabaseAppRoleId
+      allowedMemberTypes: [
+        'User'
+      ]
+      description: 'Members of this role can initialize the payments database.'
+      displayName: 'Can Initialize Payments Database'
+      isEnabled: true
+      value: 'CanInitializePaymentsDatabase'
     }
   ]
   description: name

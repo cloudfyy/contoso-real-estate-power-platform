@@ -488,7 +488,7 @@ In this workshop we will use option 1 because it will automatically assign a dev
 
 Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyond the scope of this sample). To complete the deployment the following tasks must be carried out:
 
-- TODO: Define the SQL database initialization process for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and that identity must be added to the database as an external user before the Payments API can read or write payment data.
+- Initialize the SQL database for Entra ID-only deployments by running `./infra/scripts/initialize-sql-via-function.ps1 -azureEnv development`. The Azure Functions run under a System Assigned Managed Identity (SAMI), and a protected initialization endpoint creates the database user, role membership, and payments table.
 - Add admin consent to the Payment API client Entra ID Application registration, so that it can be used as an SPN connection in Power Platform
 - Grant your user access to the Payment API so that it can be used as an OAuth user connection in Power Platform for testing.
 
