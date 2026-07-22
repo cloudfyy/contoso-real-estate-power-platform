@@ -1,28 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 using Azure.Identity;
-using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System;
 using System.Reflection;
 
-[assembly: FunctionsStartup(typeof(Contoso.API.Payments.Startup))]
-
-namespace Contoso.API.Payments;
-
-public class Startup : FunctionsStartup
-{
-    public override void Configure(IFunctionsHostBuilder builder)
+var host = new HostBuilder()
+    .ConfigureFunctionsWebApplication()
+    .ConfigureAppConfiguration(configurationBuilder =>
     {
-
-        var configurationBuilder = new ConfigurationBuilder();
-        configurationBuilder.AddUserSecrets(Assembly.GetExecutingAssembly());
+        configurationBuilder.AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true);
         configurationBuilder.AddEnvironmentVariables();
 
         var keyVaultUri = Environment.GetEnvironmentVariable("AZURE_KEY_VAULT_ENDPOINT");
-
-        // If AZURE_KEY_VAULT_ENDPOINT is set, create a configuration using KeyVault 
         if (keyVaultUri != null)
         {
             try
@@ -34,11 +25,8 @@ public class Startup : FunctionsStartup
             {
                 Console.WriteLine($"Error configuring keyvault: {e.Message}");
             }
-
         }
+    })
+    .Build();
 
-        var configuration = configurationBuilder.Build();
-        builder.Services.AddSingleton<IConfiguration>(configuration as IConfiguration);
-    }
-}
-
+host.Run();

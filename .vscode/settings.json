@@ -12,7 +12,7 @@
     "sarif-viewer.connectToGithubCodeScanning": "off",
     "azureFunctions.projectSubpath": "src\\azure-api\\Contoso.API.Payments",
     "dotnet.defaultSolution": "disable",
-    "azureFunctions.deploySubpath": "src\\azure-api\\Contoso.API.Payments/bin/Release/net6.0/publish",
+    "azureFunctions.deploySubpath": "src\\azure-api\\Contoso.API.Payments/bin/Release/net10.0/publish",
     "azureFunctions.projectLanguage": "C#",
     "azureFunctions.projectRuntime": "~4",
     "debug.internalConsoleOptions": "neverOpen",

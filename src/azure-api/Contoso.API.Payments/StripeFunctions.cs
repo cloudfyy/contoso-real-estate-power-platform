@@ -4,8 +4,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -17,7 +16,6 @@ using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.OpenApi.Models;
 using System.Net;
 using System.Linq;
-using System.Security.Claims;
 
 namespace Contoso.API.Payments;
 
@@ -36,16 +34,17 @@ public class StripeFunctions
 
     // Add a ping function to test the function app that accepts a string parameter and returns the same string with the current date and time
     // Add a ping function to test the function app that accepts a string parameter and returns the same string with the current date and time
-    [FunctionName("Ping")]
+    [Function("Ping")]
     [OpenApiOperation("Ping", "Ping function")]
     [OpenApiParameter("message", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "The message to be echoed")]
     [OpenApiResponseWithBody(HttpStatusCode.OK, "application/json", typeof(PingResponseModel), Description = "The response containing the echoed message and timestamp")]
     public IActionResult Ping(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ping/{message}")] HttpRequest _,
-        string message, ClaimsPrincipal principal)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ping/{message}")] HttpRequest req,
+        string message)
     {
         _log.LogInformation("Processing ping request.");
       
+        var principal = req.HttpContext.User;
         var roles = principal.Claims.Where(e => e.Type == "roles").Select(e => e.Value);
             
         var outMessage = $"Input (v1):{message} Roles:{(principal == null ? "No user" : principal.Identity.Name)} {(principal.Claims == null ? "No Claims" : "")}  {string.Join(", ", roles)}";
@@ -55,7 +54,7 @@ public class StripeFunctions
     }
 
 
-    [FunctionName("CreateCheckoutSession")]
+    [Function("CreateCheckoutSession")]
     [OpenApiOperation("Create Checkout Session", "Creates a Stripe checkout session")]
     [OpenApiRequestBody("application/json", typeof(CheckoutRequest), Description = "The request body for creating a checkout session")]
     public async Task<IActionResult> CreateCheckoutSession(
@@ -135,7 +134,7 @@ public class StripeFunctions
         }
     }
 
-    [FunctionName("StripeWebhook")]
+    [Function("StripeWebhook")]
     // Open API definition for the function
     [OpenApiOperation("Stripe Webhook", "Processes Stripe webhook events")]
     [OpenApiRequestBody("application/json", typeof(Event), Description = "The Stripe webhook event")]

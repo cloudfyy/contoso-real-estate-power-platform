@@ -71,9 +71,8 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
     {
       name: '${name}-appSettings'
       FUNCTIONS_EXTENSION_VERSION: '~4'
-      FUNCTIONS_WORKER_RUNTIME: 'dotnet'
+      FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
       WEBSITE_RUN_FROM_PACKAGE: '1'
-      FUNCTIONS_INPROC_NET8_ENABLED: '1'
       MICROSOFT_PROVIDER_AUTHENTICATION_SECRET: apiAppicationSecret
       netFrameworkVersion: 'v4.0'
       minimumElasticInstanceCount: 0

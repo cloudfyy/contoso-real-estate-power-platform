@@ -4,8 +4,7 @@ using Azure.Core;
 using Azure.Identity;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -19,11 +18,12 @@ using Stripe;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
+using System.IO;
 using System.Linq;
 using System.Net;
-using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace Contoso.API.Payments;
 
@@ -45,7 +45,7 @@ public class PaymentFunction
     }
 
 
-    [FunctionName("listPayments")]
+    [Function("listPayments")]
     [OpenApiOperation(operationId: "listPayments", tags: new[] { "payment" }, Summary = "Get payments", Description = "Returns a JSON array of Payments")]
     [OpenApiParameter(name: "$filter", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter the results")]
     [OpenApiParameter(name: "$orderby", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Order the results")]
@@ -54,14 +54,14 @@ public class PaymentFunction
 
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(List<Payment>), Description = "OK - Returns array of Payments")]
     public async Task<IActionResult> ListPayments(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "payments")] HttpRequest req, ClaimsPrincipal principal)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "payments")] HttpRequest req)
     {
         this._logger.LogInformation("listPayments function start");
        
         try
         {
             // Role Check
-            principal.AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
+            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
 
             var modelBuilder = new ODataConventionModelBuilder();
             modelBuilder.EntitySet<Payment>("Payments");
@@ -95,18 +95,18 @@ public class PaymentFunction
         }
     }
 
-    [FunctionName("findPaymentById")]
+    [Function("findPaymentById")]
     [OpenApiOperation(operationId: "findPaymentById", tags: new[] { "payment" }, Summary = "Get payment by id", Description = "Return Payment record matching {id}")]
     [OpenApiParameter(name: "id", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "The ID of the payment")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Payment), Description = "OK - Returns Payment object")]
     public async Task<IActionResult> FindPaymentById(
-     [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "payments/{id}")] HttpRequest _, ClaimsPrincipal principal,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "payments/{id}")] HttpRequest req,
      string id)
     {
         try
         {
             // Role Check
-            principal.AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
+            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
 
             await using SqlConnection sqlConnection = await Connect();
             var db = new QueryFactory(sqlConnection, new SqlKata.Compilers.SqlServerCompiler());
@@ -144,20 +144,27 @@ public class PaymentFunction
         }
     }
 
-    [FunctionName("addPayment")]
+    [Function("addPayment")]
     [OpenApiOperation(operationId: "addPayment", tags: new[] { "payment" }, Summary = "Add a payment", Description = "Adds a payment to the database")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(Payment), Required = true, Description = "Payment object to be added")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Payment), Description = "OK - Returns Payment object")]
 
     public async Task<IActionResult> AddPayment(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "payments")] Payment payment, ClaimsPrincipal principal)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "payments")] HttpRequest req)
     {
         this._logger.LogInformation("addPayment function start");
 
         try
         {
             // Role Check
-            principal.AssertUserInRoles(PaymentAppRoles.CanAddPayments.ToString());
+            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanAddPayments.ToString());
+
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            var payment = JsonConvert.DeserializeObject<Payment>(requestBody);
+            if (payment == null)
+            {
+                return new BadRequestObjectResult(new { error = "Invalid request body" });
+            }
 
             await AddPaymentInternal(payment);
             this._logger.LogInformation("addPayment function: inserted payment");
@@ -175,13 +182,13 @@ public class PaymentFunction
         }
     }
 
-    [FunctionName("initializePaymentsDatabase")]
+    [Function("initializePaymentsDatabase")]
     [OpenApiOperation(operationId: "initializePaymentsDatabase", tags: new[] { "admin" }, Summary = "Initialize payments database", Description = "Initializes the payments database for Entra ID-only SQL deployments")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.OK, Description = "OK - Database initialized")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Initialization endpoint is disabled")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
     public async Task<IActionResult> InitializePaymentsDatabase(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/initialize-sql")] HttpRequest _, ClaimsPrincipal principal)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/initialize-sql")] HttpRequest req)
     {
         try
         {
@@ -190,7 +197,7 @@ public class PaymentFunction
                 return new NotFoundResult();
             }
 
-            principal.AssertUserInRoles(PaymentAppRoles.CanInitializePaymentsDatabase.ToString());
+            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanInitializePaymentsDatabase.ToString());
 
             var managedIdentityName = _configuration["SQL_MANAGED_IDENTITY_USER_NAME"];
             if (string.IsNullOrWhiteSpace(managedIdentityName))

@@ -71,7 +71,7 @@
 			"type": "func",
 			"dependsOn": "build (functions)",
 			"options": {
-				"cwd": "${workspaceFolder}/src\\azure-api\\Contoso.API.Payments/bin/Debug/net6.0"
+				"cwd": "${workspaceFolder}/src\\azure-api\\Contoso.API.Payments/bin/Debug/net10.0"
 			},
 			"command": "host start",
 			"args": [
