@@ -6,6 +6,5 @@
 $envVars = GetEnvironmentVariables
 $envName = $envVars.AZURE_ENV_NAME
 
-. "$PSScriptRoot\grant-access-to-payment-api.ps1" -azureEnv $envName
-. "$PSScriptRoot\grant-access-to-sql.ps1" -azureEnv $envName
+. "$PSScriptRoot\initialize-sql-via-function.ps1" -azureEnv $envName
 . "$PSScriptRoot\setup-stripe.ps1" -azureEnv $envName

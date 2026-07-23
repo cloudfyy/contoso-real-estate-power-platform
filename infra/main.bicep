@@ -125,7 +125,7 @@ module storageAccount './core/storage/storage-account.bicep' = {
       name: 'Standard_LRS'
       tier: 'Standard'
     }
-    kind: 'Storage'
+    kind: 'StorageV2'
     defaultToOAuthAuthentication: true
     allowSharedKeyAccess: false
     allowCrossTenantReplication: false
@@ -147,6 +147,31 @@ module privateSqlAccess './payments-api/network/private-sql-access.bicep' = {
     namePrefix: resourcesPrefix
     location: location
     tags: tags
+  }
+}
+
+module keyVaultPrivateEndpoint './payments-api/security/keyvault-private-endpoint.bicep' = {
+  name: 'keyvault-private-endpoint'
+  scope: rg
+  params: {
+    keyVaultName: keyVault.outputs.name
+    location: location
+    privateEndpointSubnetId: privateSqlAccess.outputs.privateEndpointSubnetId
+    keyVaultPrivateDnsZoneId: privateSqlAccess.outputs.keyVaultPrivateDnsZoneId
+  }
+}
+
+module storagePrivateEndpoints './payments-api/network/storage-private-endpoints.bicep' = {
+  name: 'storage-private-endpoints'
+  scope: rg
+  params: {
+    storageAccountName: storageAccount.outputs.name
+    location: location
+    privateEndpointSubnetId: privateSqlAccess.outputs.privateEndpointSubnetId
+    blobPrivateDnsZoneId: privateSqlAccess.outputs.storageBlobPrivateDnsZoneId
+    queuePrivateDnsZoneId: privateSqlAccess.outputs.storageQueuePrivateDnsZoneId
+    tablePrivateDnsZoneId: privateSqlAccess.outputs.storageTablePrivateDnsZoneId
+    filePrivateDnsZoneId: privateSqlAccess.outputs.storageFilePrivateDnsZoneId
   }
 }
 
@@ -212,6 +237,7 @@ module sqlServer './payments-api/database/sqlserver.bicep' = {
     // The reference to api.outputs below will create an implicit dependency. Explicit dependencies are added for clarity.
     api
     keyVault
+    keyVaultPrivateEndpoint
   ]
   params: {
     applicationUniqueName: 'payments-api'

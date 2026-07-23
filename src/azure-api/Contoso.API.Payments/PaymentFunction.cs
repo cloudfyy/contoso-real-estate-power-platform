@@ -21,6 +21,8 @@ using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.Claims;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -61,7 +63,7 @@ public class PaymentFunction
         try
         {
             // Role Check
-            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
 
             var modelBuilder = new ODataConventionModelBuilder();
             modelBuilder.EntitySet<Payment>("Payments");
@@ -106,7 +108,7 @@ public class PaymentFunction
         try
         {
             // Role Check
-            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanQueryPayments.ToString());
 
             await using SqlConnection sqlConnection = await Connect();
             var db = new QueryFactory(sqlConnection, new SqlKata.Compilers.SqlServerCompiler());
@@ -157,7 +159,7 @@ public class PaymentFunction
         try
         {
             // Role Check
-            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanAddPayments.ToString());
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanAddPayments.ToString());
 
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var payment = JsonConvert.DeserializeObject<Payment>(requestBody);
@@ -188,16 +190,27 @@ public class PaymentFunction
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Initialization endpoint is disabled")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
     public async Task<IActionResult> InitializePaymentsDatabase(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/initialize-sql")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "database/initialize-sql")] HttpRequest req)
     {
         try
         {
-            if (!bool.TryParse(_configuration["SQL_INITIALIZATION_ENABLED"], out bool initializationEnabled) || !initializationEnabled)
+            var initializationEnabledValue = _configuration["SQL_INITIALIZATION_ENABLED"];
+            if (!bool.TryParse(initializationEnabledValue, out bool initializationEnabled) || !initializationEnabled)
             {
-                return new NotFoundResult();
+                this._logger.LogWarning("initializePaymentsDatabase endpoint is disabled. SQL_INITIALIZATION_ENABLED value: '{InitializationEnabledValue}'", initializationEnabledValue ?? "<null>");
+                return new ContentResult
+                {
+                    StatusCode = (int)HttpStatusCode.NotFound,
+                    ContentType = "application/json",
+                    Content = JsonConvert.SerializeObject(new
+                    {
+                        message = "SQL initialization endpoint is disabled. Set SQL_INITIALIZATION_ENABLED=true and restart the Function App before retrying.",
+                        sqlInitializationEnabled = initializationEnabledValue
+                    })
+                };
             }
 
-            req.HttpContext.User.AssertUserInRoles(PaymentAppRoles.CanInitializePaymentsDatabase.ToString());
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanInitializePaymentsDatabase.ToString());
 
             var managedIdentityName = _configuration["SQL_MANAGED_IDENTITY_USER_NAME"];
             if (string.IsNullOrWhiteSpace(managedIdentityName))
@@ -210,7 +223,13 @@ public class PaymentFunction
                 throw new InvalidOperationException("SQL managed identity user name was not configured.");
             }
 
-            await InitializePaymentsDatabaseInternal(managedIdentityName);
+            var managedIdentityObjectId = _configuration["SQL_MANAGED_IDENTITY_OBJECT_ID"];
+            if (string.IsNullOrWhiteSpace(managedIdentityObjectId))
+            {
+                throw new InvalidOperationException("SQL managed identity object id was not configured.");
+            }
+
+            await InitializePaymentsDatabaseInternal(managedIdentityName, managedIdentityObjectId);
             return new OkObjectResult(new { message = "Payments database initialized." });
         }
         catch (UnauthorizedAccessException ex)
@@ -223,6 +242,40 @@ public class PaymentFunction
             this._logger.LogError(ex, "initializePaymentsDatabase function: error occurred");
             return new StatusCodeResult((int)HttpStatusCode.InternalServerError);
         }
+    }
+
+    private static ClaimsPrincipal GetAuthenticatedPrincipal(HttpRequest req)
+    {
+        var principal = req.HttpContext.User;
+        if (principal?.Claims.Any(e => e.Type == "roles") == true)
+        {
+            return principal;
+        }
+
+        if (!req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var encodedPrincipal) || string.IsNullOrWhiteSpace(encodedPrincipal))
+        {
+            return principal ?? new ClaimsPrincipal(new ClaimsIdentity());
+        }
+
+        var principalJson = Encoding.UTF8.GetString(Convert.FromBase64String(encodedPrincipal.ToString()));
+        var easyAuthPrincipal = JsonConvert.DeserializeObject<EasyAuthClientPrincipal>(principalJson);
+        var claims = easyAuthPrincipal?.Claims?.Select(claim => new Claim(claim.Type, claim.Value)) ?? Enumerable.Empty<Claim>();
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "EasyAuth", "name", "roles"));
+    }
+
+    private sealed class EasyAuthClientPrincipal
+    {
+        [JsonProperty("claims")]
+        public IEnumerable<EasyAuthClaim> Claims { get; set; }
+    }
+
+    private sealed class EasyAuthClaim
+    {
+        [JsonProperty("typ")]
+        public string Type { get; set; } = string.Empty;
+
+        [JsonProperty("val")]
+        public string Value { get; set; } = string.Empty;
     }
 
     internal async Task<IEnumerable<Payment>> ListPaymentsInternal(FilterClause filter, OrderByClause orderby, long? top, long? skip)
@@ -337,16 +390,17 @@ public class PaymentFunction
         return payment.Id;
     }
 
-    internal async Task InitializePaymentsDatabaseInternal(string managedIdentityName)
+    internal async Task InitializePaymentsDatabaseInternal(string managedIdentityName, string managedIdentityObjectId)
     {
         await using SqlConnection sqlConnection = await Connect();
         await using SqlCommand command = sqlConnection.CreateCommand();
         var managedIdentityLiteral = EscapeSqlLiteral(managedIdentityName);
         var managedIdentityIdentifier = QuoteSqlIdentifier(managedIdentityName);
+        var managedIdentitySid = ToSqlSidHex(managedIdentityObjectId);
         command.CommandText = $@"
 IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = N'{managedIdentityLiteral}')
 BEGIN
-    EXEC(N'CREATE USER {managedIdentityIdentifier} FROM EXTERNAL PROVIDER');
+    EXEC(N'CREATE USER {managedIdentityIdentifier} WITH SID = {managedIdentitySid}, TYPE = E');
 END
 
 IF NOT EXISTS (
@@ -398,6 +452,12 @@ END;
     private static string EscapeSqlLiteral(string value)
     {
         return value.Replace("'", "''", StringComparison.Ordinal);
+    }
+
+    private static string ToSqlSidHex(string objectId)
+    {
+        var bytes = Guid.Parse(objectId).ToByteArray();
+        return "0x" + BitConverter.ToString(bytes).Replace("-", string.Empty, StringComparison.Ordinal);
     }
 
     

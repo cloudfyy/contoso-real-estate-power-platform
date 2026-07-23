@@ -23,12 +23,42 @@ function AssignRolesToPrincipal {
     # Get the service principal id
     $servicePrincipalId = az ad sp list --filter "appId eq '$appId'" --query "[0].id" --output tsv
 
+    $existingAssignments = az rest `
+        --method GET `
+        --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$servicePrincipalId/appRoleAssignedTo?`$top=999" `
+        --query "value[?principalId=='$principalId'].appRoleId" `
+        --output tsv
+
     # Loop through each object and get the id if the value is in the list
     foreach ($item in $appRoles) {
         if ($roleNamesArray -contains $item.value) {
+            if ($existingAssignments -contains $item.id) {
+                Write-Host "Role $($item.value)[$($item.id)] is already assigned to principal [$principalId]" -ForegroundColor Yellow
+                continue
+            }
+
             Write-Host "Assigning role $($item.value)[$($item.id)] to principal [$principalId]" -ForegroundColor Green
             # See https://learn.microsoft.com/en-us/graph/api/serviceprincipal-post-approleassignedto?view=graph-rest-1.0&tabs=http
-            az rest --method POST --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$servicePrincipalId/appRoleAssignedTo" --body $body "{'principalId': '$principalId','resourceId': '$servicePrincipalId','appRoleId': '$($item.id)'}"
+            $body = @{
+                principalId = $principalId
+                resourceId = $servicePrincipalId
+                appRoleId = $item.id
+            } | ConvertTo-Json -Compress
+
+            $bodyFile = New-TemporaryFile
+            Set-Content -Path $bodyFile -Value $body -Encoding utf8
+
+            try {
+                az rest `
+                    --method POST `
+                    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$servicePrincipalId/appRoleAssignedTo" `
+                    --headers "Content-Type=application/json" `
+                    --body "@$bodyFile" `
+                    --output none
+            }
+            finally {
+                Remove-Item -Path $bodyFile -Force
+            }
         }
     }
 }
@@ -49,6 +79,8 @@ AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStri
 
 # The Client for Contoso Real Estate Payments API needs admin consent if it's used as a service principal to access the API
 Write-Host "Granting access to the Payment API for the SPN used in connections" -ForegroundColor Green
+$clientServicePrincipalId = az ad sp list --filter "appId eq '$($envVars.ENTRA_API_CLIENT_APP_ID)'" --query "[0].id" --output tsv
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase" -principalId $clientServicePrincipalId -appId $appId
 az ad app permission admin-consent --id $envVars.ENTRA_API_CLIENT_APP_ID
 
 Write-Host "Complete" -ForegroundColor Green

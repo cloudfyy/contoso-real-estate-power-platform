@@ -79,6 +79,7 @@ resource apiApplication 'Microsoft.Graph/applications@v1.0' = {
       id: canInitializePaymentsDatabaseAppRoleId
       allowedMemberTypes: [
         'User'
+        'Application'
       ]
       description: 'Members of this role can initialize the payments database.'
       displayName: 'Can Initialize Payments Database'
@@ -148,6 +149,10 @@ resource clientApp 'Microsoft.Graph/applications@v1.0' = if (newOrExisting == 'n
 					id: canAddPaymentsAppRoleId // CanAddPayments app role to allow the virtual table managed identity scope to add payments
 					type: 'Role'
 				}
+        {
+          id: canInitializePaymentsDatabaseAppRoleId // CanInitializePaymentsDatabase app role to allow the setup script to initialize the database
+          type: 'Role'
+        }
 			]
 		}
   ]

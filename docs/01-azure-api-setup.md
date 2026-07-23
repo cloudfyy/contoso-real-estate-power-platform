@@ -132,6 +132,12 @@ Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyon
 - Add admin consent to the Payment API client Entra ID Application registration, so that it can be used as an SPN connection in Power Platform
 - Grant your user access to the Payment API so that it can be used as an OAuth user connection in Power Platform for testing.
 
+1. Ensure the Azure resources and Payments API Function App code have been deployed. `azd up --environment development` does both. If you only ran `azd provision`, run the following before the post-deployment setup:
+
+    ```powershell
+    azd deploy payments-api --environment development
+    ```
+
 1. You will need a stripe account for the payment API to function. 
 1. Navigate to [Sign Up and Create a Stripe Account | Stripe](https://dashboard.stripe.com/register)
 1. Enter you Email, Name, Country, and Password. 
@@ -139,11 +145,19 @@ Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyon
 1. Validate your email address by following the instructions.
 1. Navigate to https://dashboard.stripe.com/test/dashboard
 
-7. Run the following and follow the instructions carefully:
+1. Run the following and follow the instructions carefully:
 
-```powershell
-./infra/scripts/post-deployment-setup.ps1
-```
+    ```powershell
+    ./infra/scripts/post-deployment-setup.ps1
+    ```
+
+    The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/database/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
+
+    If you only need to rerun the SQL initialization step, run:
+
+    ```powershell
+    ./infra/scripts/initialize-sql-via-function.ps1 -azureEnv development
+    ```
 
 ## 🗑️Deleting deployment
 
@@ -183,7 +197,7 @@ To create a managed identity for the Azure Function:
 
 ### Initialize the database with the Function API
 
-The SQL server has public network access disabled, so initialization must run from inside Azure. The Payments API Function App is integrated with the SQL private endpoint network and exposes a protected initialization endpoint at `POST /api/admin/initialize-sql`.
+The SQL server has public network access disabled, so initialization must run from inside Azure. The Payments API Function App is integrated with the SQL private endpoint network and exposes a protected initialization endpoint at `POST /api/database/initialize-sql`.
 
 The endpoint is disabled by default. The initialization script temporarily adds the Function App managed identity to the SQL Entra admin group, enables the endpoint, calls it, disables the endpoint, and then removes the temporary admin membership.
 
@@ -192,3 +206,5 @@ The endpoint is disabled by default. The initialization script temporarily adds 
 ```
 
 After initialization, the Function App managed identity keeps only its database-level permissions and no longer needs to remain a SQL Entra administrator.
+
+For the detailed troubleshooting path behind this flow, see [Payments SQL Initialization Troubleshooting](07-payments-sql-initialization-troubleshooting.md).

@@ -488,11 +488,17 @@ In this workshop we will use option 1 because it will automatically assign a dev
 
 Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyond the scope of this sample). To complete the deployment the following tasks must be carried out:
 
-- Initialize the SQL database for Entra ID-only deployments by running `./infra/scripts/initialize-sql-via-function.ps1 -azureEnv development`. The Azure Functions run under a System Assigned Managed Identity (SAMI), and a protected initialization endpoint creates the database user, role membership, and payments table.
+- Initialize the SQL database for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and a protected initialization endpoint creates the database user, role membership, and payments table.
 - Add admin consent to the Payment API client Entra ID Application registration, so that it can be used as an SPN connection in Power Platform
 - Grant your user access to the Payment API so that it can be used as an OAuth user connection in Power Platform for testing.
 
 To perform the post deployment:
+
+1. Ensure the Azure resources and Payments API Function App code have been deployed. `azd up --environment development` does both. If you only ran `azd provision`, run the following before the post-deployment setup:
+
+   ```powershell
+   azd deploy payments-api --environment development
+   ```
 
 1. You will need a stripe account for the payment API to function. You do not need a production account, a developer test account is created for free.
 1. Navigate to [Sign Up and Create a Stripe Account | Stripe](https://dashboard.stripe.com/register)
@@ -501,13 +507,21 @@ To perform the post deployment:
 1. Validate your email address by following the instructions.
 1. Navigate to https://dashboard.stripe.com/test/dashboard
 
-7. Run the following and follow the instructions carefully:
+1. Run the following and follow the instructions carefully:
 
-```powershell
-./infra/scripts/post-deployment-setup.ps1
-```
+   ```powershell
+   ./infra/scripts/post-deployment-setup.ps1
+   ```
 
-Enter the environment that you deployed using azd. If you have deployed multiple times with different names, then you must pick the one you are setting up.
+   Enter the environment that you deployed using azd. If you have deployed multiple times with different names, then you must pick the one you are setting up.
+
+   The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/database/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
+
+   If you only need to rerun the SQL initialization step, run:
+
+   ```powershell
+   ./infra/scripts/initialize-sql-via-function.ps1 -azureEnv development
+   ```
 
 ## ✅Deploying Core Development Solution
 
