@@ -6,6 +6,26 @@ param (
     [string]$azureEnv
 )
 
+$ErrorActionPreference = 'Stop'
+
+function Assert-AzCliSucceeded {
+    param (
+        [object]$Output,
+        [string]$Operation
+    )
+
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+
+    $message = ($Output | Out-String).Trim()
+    if ($message -like '*TokenCreatedWithOutdatedPolicies*' -or $message -like '*InteractionRequired*' -or $message -like '*InvalidAuthenticationToken*') {
+        throw "$Operation failed because Azure CLI needs interactive authentication. Run 'az logout', then 'az login', then rerun this script. $message"
+    }
+
+    throw "$Operation failed. $message"
+}
+
 function AssignRolesToPrincipal {
     param (
         [string]$roleNames,
@@ -17,17 +37,23 @@ function AssignRolesToPrincipal {
     $roleNamesArray = $roleNames -split ',' | ForEach-Object { $_.Trim() }
 
     
-    $appRoles = $(az ad app show --id $appId --query "appRoles" --output json)
-    $appRoles = $appRoles | ConvertFrom-Json
+    $appRolesJson = az ad app show --id $appId --query "appRoles" --output json 2>&1
+    Assert-AzCliSucceeded -Output $appRolesJson -Operation "Reading Payments API app roles"
+    $appRoles = $appRolesJson | ConvertFrom-Json
 
     # Get the service principal id
-    $servicePrincipalId = az ad sp list --filter "appId eq '$appId'" --query "[0].id" --output tsv
+    $servicePrincipalId = az ad sp list --filter "appId eq '$appId'" --query "[0].id" --output tsv 2>&1
+    Assert-AzCliSucceeded -Output $servicePrincipalId -Operation "Reading Payments API service principal"
+    if ([string]::IsNullOrWhiteSpace($servicePrincipalId)) {
+        throw "Could not find the service principal for Payments API app '$appId'. Run azd provision, then rerun this script."
+    }
 
     $existingAssignments = az rest `
         --method GET `
         --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$servicePrincipalId/appRoleAssignedTo?`$top=999" `
         --query "value[?principalId=='$principalId'].appRoleId" `
-        --output tsv
+        --output tsv 2>&1
+    Assert-AzCliSucceeded -Output $existingAssignments -Operation "Reading existing Payments API app role assignments"
 
     $matchedRoleNames = @()
 
@@ -52,12 +78,13 @@ function AssignRolesToPrincipal {
             Set-Content -Path $bodyFile -Value $body -Encoding utf8
 
             try {
-                az rest `
+                $assignmentResult = az rest `
                     --method POST `
                     --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$servicePrincipalId/appRoleAssignedTo" `
                     --headers "Content-Type=application/json" `
                     --body "@$bodyFile" `
-                    --output none
+                    --output none 2>&1
+                Assert-AzCliSucceeded -Output $assignmentResult -Operation "Assigning Payments API app role '$($item.value)'"
             }
             finally {
                 Remove-Item -Path $bodyFile -Force
@@ -82,14 +109,20 @@ $appId = $envVars.ENTRA_API_APP_ID
 
 # Assign the roles to the current user for testing
 Write-Host "Granting access to the Payment API for the current user" -ForegroundColor Green
-$currentUserPrincipalId=$(az ad signed-in-user show --query id -o tsv)
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration" -principalId $currentUserPrincipalId -appId $appId
+$currentUserPrincipalId = az ad signed-in-user show --query id -o tsv 2>&1
+Assert-AzCliSucceeded -Output $currentUserPrincipalId -Operation "Reading current Azure CLI user"
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret" -principalId $currentUserPrincipalId -appId $appId
 
 # The Client for Contoso Real Estate Payments API needs admin consent if it's used as a service principal to access the API
 Write-Host "Granting access to the Payment API for the SPN used in connections" -ForegroundColor Green
-$clientServicePrincipalId = az ad sp list --filter "appId eq '$($envVars.ENTRA_API_CLIENT_APP_ID)'" --query "[0].id" --output tsv
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration" -principalId $clientServicePrincipalId -appId $appId
-az ad app permission admin-consent --id $envVars.ENTRA_API_CLIENT_APP_ID
+$clientServicePrincipalId = az ad sp list --filter "appId eq '$($envVars.ENTRA_API_CLIENT_APP_ID)'" --query "[0].id" --output tsv 2>&1
+Assert-AzCliSucceeded -Output $clientServicePrincipalId -Operation "Reading Payments API client service principal"
+if ([string]::IsNullOrWhiteSpace($clientServicePrincipalId)) {
+    throw "Could not find the service principal for Payments API client app '$($envVars.ENTRA_API_CLIENT_APP_ID)'. Run azd provision, then rerun this script."
+}
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret" -principalId $clientServicePrincipalId -appId $appId
+$adminConsentResult = az ad app permission admin-consent --id $envVars.ENTRA_API_CLIENT_APP_ID 2>&1
+Assert-AzCliSucceeded -Output $adminConsentResult -Operation "Granting admin consent to the Payments API client app"
 
 Write-Host "Complete" -ForegroundColor Green
 

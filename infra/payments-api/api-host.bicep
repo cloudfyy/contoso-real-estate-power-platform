@@ -16,6 +16,7 @@ param virtualNetworkSubnetId string = ''
 param apiApplicationID string
 @secure()
 param apiAppicationSecret string
+param paymentsApiClientSecretName string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2022-05-01' existing = {
   name: storageAccountName
@@ -83,7 +84,10 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
       SQL_INITIALIZATION_ENABLED: 'false'
       STRIPE_CONFIGURATION_ENABLED: 'false'
       CONFIGURATION_VALIDATION_ENABLED: 'false'
+      PAYMENTS_API_CLIENT_SECRET_READ_ENABLED: 'false'
+      AZURE_KEY_VAULT_ENTRA_API_SECRET_NAME: paymentsApiClientSecretName
       SQL_MANAGED_IDENTITY_USER_NAME: name
+      SQL_MANAGED_IDENTITY_CLIENT_ID: ''
       SQL_MANAGED_IDENTITY_OBJECT_ID: appService.identity.principalId
       
     },

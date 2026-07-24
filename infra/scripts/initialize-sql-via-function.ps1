@@ -386,6 +386,15 @@ $functionPrincipalId = az functionapp identity show `
     --query principalId `
     --output tsv
 
+$functionClientId = az ad sp show `
+    --id $functionPrincipalId `
+    --query appId `
+    --output tsv
+
+if ([string]::IsNullOrWhiteSpace($functionClientId)) {
+    throw "Could not resolve the client id for Function App managed identity '$functionPrincipalId'."
+}
+
 Write-Host "Adding current user and Function App identity to SQL admin group '$($sqlAdminGroup.displayName)'" -ForegroundColor Green
 Add-GroupMemberIfMissing -GroupId $sqlAdminGroup.id -MemberId $currentUserObjectId
 Add-GroupMemberIfMissing -GroupId $sqlAdminGroup.id -MemberId $functionPrincipalId
@@ -454,7 +463,8 @@ try {
 
     $settings = @(
         'SQL_INITIALIZATION_ENABLED=true',
-        "SQL_MANAGED_IDENTITY_OBJECT_ID=$functionPrincipalId"
+        "SQL_MANAGED_IDENTITY_CLIENT_ID=$functionClientId",
+        "SQL_MANAGED_IDENTITY_OBJECT_ID=$functionClientId"
     )
     if ($apiClientSecretGenerated) {
         $settings += "PAYMENTS_API_CLIENT_SECRET=$apiClientSecret"

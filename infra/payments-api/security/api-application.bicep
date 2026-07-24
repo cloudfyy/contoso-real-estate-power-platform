@@ -20,6 +20,7 @@ var canAddPaymentsAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'C
 var canInitializePaymentsDatabaseAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanInitializePaymentsDatabase')
 var canConfigureStripeAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanConfigureStripe')
 var canValidatePaymentsConfigurationAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanValidatePaymentsConfiguration')
+var canReadPaymentsApiClientSecretAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanReadPaymentsApiClientSecret')
 
 // Define the Entra ID application registration
 // https://learn.microsoft.com/en-us/graph/templates/reference/applications?view=graph-bicep-1.0
@@ -110,6 +111,17 @@ resource apiApplication 'Microsoft.Graph/applications@v1.0' = {
       isEnabled: true
       value: 'CanValidatePaymentsConfiguration'
     }
+    {
+      id: canReadPaymentsApiClientSecretAppRoleId
+      allowedMemberTypes: [
+        'User'
+        'Application'
+      ]
+      description: 'Members of this role can read the Payments API client secret for deployment configuration.'
+      displayName: 'Can Read Payments API Client Secret'
+      isEnabled: true
+      value: 'CanReadPaymentsApiClientSecret'
+    }
   ]
   description: name
   displayName: name
@@ -183,6 +195,10 @@ resource clientApp 'Microsoft.Graph/applications@v1.0' = if (newOrExisting == 'n
         }
         {
           id: canValidatePaymentsConfigurationAppRoleId // CanValidatePaymentsConfiguration app role to allow validation scripts to inspect configuration
+          type: 'Role'
+        }
+        {
+          id: canReadPaymentsApiClientSecretAppRoleId // CanReadPaymentsApiClientSecret app role to allow deployment scripts to read the connector client secret
           type: 'Role'
         }
 			]

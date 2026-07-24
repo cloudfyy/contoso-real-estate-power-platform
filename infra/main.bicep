@@ -223,6 +223,7 @@ module api './payments-api/payments-api.bicep' = {
     appServicePlanName: appServicePlan.outputs.name
     keyVaultName: keyVault.outputs.name
     apiApplicationID: apiApplication.outputs.appId
+    paymentsApiClientSecretName: apiApplication.outputs.appClientKeyVaultSecretName
     storageManagedIdentity: true
     virtualNetworkSubnetId: privateSqlAccess.outputs.functionSubnetId
     }

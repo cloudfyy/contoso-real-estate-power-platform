@@ -373,18 +373,35 @@ if ([string]::IsNullOrWhiteSpace($token)) {
     throw "Could not acquire an application access token for api://$apiAppId. Ensure the client app has the CanValidatePaymentsConfiguration application role and admin consent."
 }
 
+$secretReadToken = Get-PaymentsApiAccessTokenWithRole `
+    -TenantId $tenantId `
+    -ApiAppId $apiAppId `
+    -ApiClientAppId $apiClientAppId `
+    -ApiClientSecret $apiClientSecret `
+    -RequiredRole 'CanReadPaymentsApiClientSecret'
+
+if ([string]::IsNullOrWhiteSpace($secretReadToken)) {
+    throw "Could not acquire an application access token for api://$apiAppId. Ensure the client app has the CanReadPaymentsApiClientSecret application role and admin consent."
+}
+
 try {
     Write-Host "Waiting for the Function App to apply configuration validation settings" -ForegroundColor Yellow
     az functionapp config appsettings set `
         --resource-group $resourceGroupName `
         --name $functionAppName `
-        --settings CONFIGURATION_VALIDATION_ENABLED=true `
+        --settings CONFIGURATION_VALIDATION_ENABLED=true PAYMENTS_API_CLIENT_SECRET_READ_ENABLED=true `
         --output none
 
     Wait-FunctionAppSetting `
         -ResourceGroupName $resourceGroupName `
         -FunctionAppName $functionAppName `
         -Name 'CONFIGURATION_VALIDATION_ENABLED' `
+        -ExpectedValue 'true'
+
+    Wait-FunctionAppSetting `
+        -ResourceGroupName $resourceGroupName `
+        -FunctionAppName $functionAppName `
+        -Name 'PAYMENTS_API_CLIENT_SECRET_READ_ENABLED' `
         -ExpectedValue 'true'
 
     Restart-FunctionAppAndWait `
@@ -394,6 +411,7 @@ try {
 
     $sqlValidationUri = "$($functionAppUri.TrimEnd('/'))/api/configuration/validate-sql"
     $keyVaultValidationUri = "$($functionAppUri.TrimEnd('/'))/api/configuration/validate-key-vault"
+    $paymentsApiClientSecretUri = "$($functionAppUri.TrimEnd('/'))/api/configuration/payments-api-client-secret"
 
     Write-Host "Calling $sqlValidationUri" -ForegroundColor Green
     $sqlValidation = Invoke-ValidationEndpointWithRetry -Uri $sqlValidationUri -Token $token
@@ -404,13 +422,25 @@ try {
     $keyVaultValidation = Invoke-ValidationEndpointWithRetry -Uri $keyVaultValidationUri -Token $token
     Write-Host "Key Vault validation result" -ForegroundColor Cyan
     $keyVaultValidation | ConvertTo-Json -Depth 20
+
+    Write-Host "Calling $paymentsApiClientSecretUri" -ForegroundColor Green
+    $paymentsApiClientSecret = Invoke-ValidationEndpointWithRetry -Uri $paymentsApiClientSecretUri -Token $secretReadToken
+    if ([string]::IsNullOrWhiteSpace($paymentsApiClientSecret.value)) {
+        throw "The Payments API client secret endpoint did not return a secret value."
+    }
+
+    Write-Host "Payments API client secret endpoint result" -ForegroundColor Cyan
+    @{
+        name = $paymentsApiClientSecret.name
+        valueLength = ([string]$paymentsApiClientSecret.value).Length
+    } | ConvertTo-Json
 }
 finally {
     Write-Host "Disabling the configuration validation endpoints" -ForegroundColor Yellow
     az functionapp config appsettings set `
         --resource-group $resourceGroupName `
         --name $functionAppName `
-        --settings CONFIGURATION_VALIDATION_ENABLED=false `
+        --settings CONFIGURATION_VALIDATION_ENABLED=false PAYMENTS_API_CLIENT_SECRET_READ_ENABLED=false `
         --output none
 
     Restart-FunctionAppAndWait `

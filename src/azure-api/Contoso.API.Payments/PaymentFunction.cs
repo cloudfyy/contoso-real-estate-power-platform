@@ -37,7 +37,8 @@ enum PaymentAppRoles
     CanAddPayments,
     CanInitializePaymentsDatabase,
     CanConfigureStripe,
-    CanValidatePaymentsConfiguration
+    CanValidatePaymentsConfiguration,
+    CanReadPaymentsApiClientSecret
 }
 public class PaymentFunction
 {
@@ -227,13 +228,18 @@ public class PaymentFunction
                 throw new InvalidOperationException("SQL managed identity user name was not configured.");
             }
 
-            var managedIdentityObjectId = _configuration["SQL_MANAGED_IDENTITY_OBJECT_ID"];
-            if (string.IsNullOrWhiteSpace(managedIdentityObjectId))
+            var managedIdentityClientId = _configuration["SQL_MANAGED_IDENTITY_CLIENT_ID"];
+            if (string.IsNullOrWhiteSpace(managedIdentityClientId))
             {
-                throw new InvalidOperationException("SQL managed identity object id was not configured.");
+                managedIdentityClientId = _configuration["SQL_MANAGED_IDENTITY_OBJECT_ID"];
             }
 
-            await InitializePaymentsDatabaseInternal(managedIdentityName, managedIdentityObjectId);
+            if (string.IsNullOrWhiteSpace(managedIdentityClientId))
+            {
+                throw new InvalidOperationException("SQL managed identity client id was not configured.");
+            }
+
+            await InitializePaymentsDatabaseInternal(managedIdentityName, managedIdentityClientId);
             return new OkObjectResult(new { message = "Payments database initialized." });
         }
         catch (UnauthorizedAccessException ex)
@@ -363,6 +369,49 @@ public class PaymentFunction
         {
             this._logger.LogError(ex, "validatePaymentsKeyVaultConfiguration function: error occurred");
             return GetConfigurationErrorResult("Configuration validation failed.", ex);
+        }
+    }
+
+    [Function("getPaymentsApiClientSecret")]
+    [OpenApiOperation(operationId: "getPaymentsApiClientSecret", tags: new[] { "configuration" }, Summary = "Get Payments API client secret", Description = "Returns the Payments API client secret from Key Vault for deployment configuration")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "OK - Payments API client secret")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Secret read endpoint is disabled")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
+    public async Task<IActionResult> GetPaymentsApiClientSecret(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "configuration/payments-api-client-secret")] HttpRequest req)
+    {
+        try
+        {
+            var secretReadEnabledValue = _configuration["PAYMENTS_API_CLIENT_SECRET_READ_ENABLED"];
+            if (!bool.TryParse(secretReadEnabledValue, out bool secretReadEnabled) || !secretReadEnabled)
+            {
+                this._logger.LogWarning("getPaymentsApiClientSecret endpoint is disabled. PAYMENTS_API_CLIENT_SECRET_READ_ENABLED value: '{SecretReadEnabledValue}'", secretReadEnabledValue ?? "<null>");
+                return new ContentResult
+                {
+                    StatusCode = (int)HttpStatusCode.NotFound,
+                    ContentType = "application/json",
+                    Content = JsonConvert.SerializeObject(new
+                    {
+                        message = "Payments API client secret read endpoint is disabled. Set PAYMENTS_API_CLIENT_SECRET_READ_ENABLED=true and restart the Function App before retrying.",
+                        paymentsApiClientSecretReadEnabled = secretReadEnabledValue
+                    })
+                };
+            }
+
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanReadPaymentsApiClientSecret.ToString());
+
+            var secret = await GetPaymentsApiClientSecretInternal();
+            return new OkObjectResult(secret);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogWarning(ex, $"getPaymentsApiClientSecret unauthorized access attempt. {ex.Message}");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "getPaymentsApiClientSecret function: error occurred");
+            return GetConfigurationErrorResult("Payments API client secret read failed.", ex);
         }
     }
 
@@ -548,13 +597,13 @@ public class PaymentFunction
         return payment.Id;
     }
 
-    internal async Task InitializePaymentsDatabaseInternal(string managedIdentityName, string managedIdentityObjectId)
+    internal async Task InitializePaymentsDatabaseInternal(string managedIdentityName, string managedIdentityClientId)
     {
         await using SqlConnection sqlConnection = await Connect();
         await using SqlCommand command = sqlConnection.CreateCommand();
         var managedIdentityLiteral = EscapeSqlLiteral(managedIdentityName);
         var managedIdentityIdentifier = QuoteSqlIdentifier(managedIdentityName);
-        var managedIdentitySid = ToSqlSidHex(managedIdentityObjectId);
+        var managedIdentitySid = ToSqlSidHex(managedIdentityClientId);
         command.CommandText = $@"
 IF EXISTS (
     SELECT *
@@ -635,14 +684,7 @@ END;
 
     internal async Task ConfigureStripeInternal(StripeConfigurationRequest stripeConfiguration)
     {
-        var keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"];
-        if (string.IsNullOrWhiteSpace(keyVaultEndpoint))
-        {
-            throw new InvalidOperationException("Key Vault endpoint was not configured.");
-        }
-
-        TokenCredential credential = EnvironmentExtensions.IsTestEnvironment() ? new AzureCliCredential() : new DefaultAzureCredential();
-        var secretClient = new SecretClient(new Uri(keyVaultEndpoint), credential);
+        var secretClient = CreateSecretClient();
 
         await secretClient.SetSecretAsync("StripeApiKey", stripeConfiguration.StripeApiKey);
         await secretClient.SetSecretAsync("StripeWebhookSecret", stripeConfiguration.StripeWebhookSecret);
@@ -721,15 +763,14 @@ ORDER BY ORDINAL_POSITION;";
 
     internal async Task<object> ValidatePaymentsKeyVaultConfigurationInternal()
     {
-        var keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"];
-        if (string.IsNullOrWhiteSpace(keyVaultEndpoint))
+        var secretClient = CreateSecretClient();
+        var secretNames = new List<string> { "StripeApiKey", "StripeWebhookSecret" };
+        var paymentsApiClientSecretName = GetPaymentsApiClientSecretName();
+        if (!secretNames.Contains(paymentsApiClientSecretName, StringComparer.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Key Vault endpoint was not configured.");
+            secretNames.Add(paymentsApiClientSecretName);
         }
 
-        TokenCredential credential = EnvironmentExtensions.IsTestEnvironment() ? new AzureCliCredential() : new DefaultAzureCredential();
-        var secretClient = new SecretClient(new Uri(keyVaultEndpoint), credential);
-        var secretNames = new[] { "StripeApiKey", "StripeWebhookSecret" };
         var secrets = new List<object>();
 
         foreach (var secretName in secretNames)
@@ -762,9 +803,45 @@ ORDER BY ORDINAL_POSITION;";
         return new
         {
             generatedAt = DateTimeOffset.UtcNow,
-            keyVaultEndpoint,
+            keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"],
             secrets
         };
+    }
+
+    internal async Task<object> GetPaymentsApiClientSecretInternal()
+    {
+        var secretClient = CreateSecretClient();
+        var secretName = GetPaymentsApiClientSecretName();
+        KeyVaultSecret secret = await secretClient.GetSecretAsync(secretName);
+
+        return new
+        {
+            name = secretName,
+            value = secret.Value
+        };
+    }
+
+    private SecretClient CreateSecretClient()
+    {
+        var keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"];
+        if (string.IsNullOrWhiteSpace(keyVaultEndpoint))
+        {
+            throw new InvalidOperationException("Key Vault endpoint was not configured.");
+        }
+
+        TokenCredential credential = EnvironmentExtensions.IsTestEnvironment() ? new AzureCliCredential() : new DefaultAzureCredential();
+        return new SecretClient(new Uri(keyVaultEndpoint), credential);
+    }
+
+    private string GetPaymentsApiClientSecretName()
+    {
+        var secretName = _configuration["AZURE_KEY_VAULT_ENTRA_API_SECRET_NAME"];
+        if (string.IsNullOrWhiteSpace(secretName))
+        {
+            throw new InvalidOperationException("Payments API client secret name was not configured.");
+        }
+
+        return secretName;
     }
 
     private static async Task<List<Dictionary<string, object>>> ReadRowsAsync(SqlCommand command)

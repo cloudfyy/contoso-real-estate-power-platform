@@ -18,7 +18,6 @@ function Get-RequiredEnvironmentVariable {
 
 $clientAppObjectId = Get-RequiredEnvironmentVariable 'ENTRA_API_CLIENT_OBJECT_ID'
 $clientAppId = Get-RequiredEnvironmentVariable 'ENTRA_API_CLIENT_APP_ID'
-$keyVaultName = Get-RequiredEnvironmentVariable 'AZURE_KEY_VAULT_NAME'
 $secretName = Get-RequiredEnvironmentVariable 'AZURE_KEY_VAULT_ENTRA_API_SECRET_NAME'
 $resourceGroupName = Get-RequiredEnvironmentVariable 'AZURE_RESOURCE_GROUP'
 $functionAppName = Get-RequiredEnvironmentVariable 'SERVICE_API_NAME'
@@ -43,13 +42,7 @@ $credential = az rest `
 if ([string]::IsNullOrWhiteSpace($credential.secretText)) {
 	throw 'Microsoft Graph did not return a generated client secret.'
 }
-
-Write-Host "Writing generated client secret to Key Vault secret '$secretName'"
-az keyvault secret set `
-	--vault-name $keyVaultName `
-	--name $secretName `
-	--value $credential.secretText `
-	--output none
+# TODO: Write the generated client secret to Key Vault secret '$secretName' through the Payments API because Key Vault public network access is disabled.
 
 Write-Host "Updating Function App authentication secret setting"
 az functionapp config appsettings set `

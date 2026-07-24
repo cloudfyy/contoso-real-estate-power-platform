@@ -11,6 +11,7 @@ param managedIdentity bool = !empty(keyVaultName) || storageManagedIdentity
 param storageManagedIdentity bool = false
 param apiApplicationID string
 param virtualNetworkSubnetId string = ''
+param paymentsApiClientSecretName string
 
 resource hostingPlan 'Microsoft.Web/serverfarms@2021-03-01' existing = {
   name: appServicePlanName
@@ -31,6 +32,7 @@ module api './api-host.bicep' = {
     storageAccountName: storageAccountName
     keyVaultName: keyVaultName
     apiApplicationID: apiApplicationID
+    paymentsApiClientSecretName: paymentsApiClientSecretName
     // Requires access to the vault
     // See https://learn.microsoft.com/en-us/azure/azure-resource-manager/managed-applications/key-vault-access
     apiAppicationSecret: 'set-by-postprovision-hook'
