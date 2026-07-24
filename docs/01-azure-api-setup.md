@@ -151,12 +151,18 @@ Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyon
     ./infra/scripts/post-deployment-setup.ps1
     ```
 
-    The `postdeploy` hook writes the Payments API client secret to private Key Vault through the deployed Function App. The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/configuration/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
+    The `postdeploy` hook writes the Payments API client secret to private Key Vault through the deployed Function App. The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe by calling the deployed Function App so the Stripe secrets are also written from the private Key Vault network path. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/configuration/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
 
     If you only need to rerun the SQL initialization step, run:
 
     ```powershell
     ./infra/scripts/initialize-sql-via-function.ps1 -azureEnv development
+    ```
+
+    If you only need to rerun the Payments API client secret write step after a deployment or Entra role propagation delay, run:
+
+    ```powershell
+    ./infra/scripts/write-payments-api-client-secret-to-key-vault.ps1 -azureEnv development
     ```
 
 ## 🗑️Deleting deployment

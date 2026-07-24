@@ -12,7 +12,7 @@ The initialization script performs these steps:
 1. Grants the Payments API initialization app role to the current user and the API client service principal.
 1. Adds the current user and Function App managed identity to a temporary SQL Entra administrator group.
 1. Sets that group as the SQL Entra administrator.
-1. Temporarily sets `SQL_INITIALIZATION_ENABLED=true` and `SQL_MANAGED_IDENTITY_OBJECT_ID=<function-principal-id>` on the Function App.
+1. Temporarily sets `SQL_INITIALIZATION_ENABLED=true`, `SQL_MANAGED_IDENTITY_CLIENT_ID=<function-client-id>`, and `SQL_MANAGED_IDENTITY_OBJECT_ID=<function-client-id>` on the Function App.
 1. Restarts the Function App and waits for `GET /api/ping/function-ready`.
 1. Calls `POST /api/configuration/initialize-sql` with a client credentials token for the Payments API app registration.
 1. Disables the initialization endpoint and removes the Function App identity from the temporary SQL admin group.
@@ -137,13 +137,13 @@ Cause:
 
 Fix:
 
-Create the database user with the managed identity object id instead of asking SQL to resolve the display name:
+Create the database user with the managed identity client/application id instead of asking SQL to resolve the display name:
 
 ```sql
-CREATE USER [<function-app-name>] WITH SID = 0x<object-id-guid-bytes>, TYPE = E;
+CREATE USER [<function-app-name>] WITH SID = 0x<client-id-guid-bytes>, TYPE = E;
 ```
 
-The script sets `SQL_MANAGED_IDENTITY_OBJECT_ID` from the Function App system-assigned identity principal id. The API converts that object id to the SID format expected by SQL Server.
+Azure SQL expects the managed identity application/client id as the SID for `TYPE = E`. The initialization script resolves the Function App system-assigned identity client id and sets both `SQL_MANAGED_IDENTITY_CLIENT_ID` and the legacy `SQL_MANAGED_IDENTITY_OBJECT_ID` app setting to that value. The API converts the client id to the SID format expected by SQL Server.
 
 ## Issue: 500 `Login failed for user '<token-identified principal>'` During Validation
 
@@ -175,7 +175,7 @@ Then rerun:
 ./infra/scripts/validate-payments-configuration.ps1 -azureEnv <environment>
 ```
 
-If it still fails, verify the Function App setting `AZURE-SQL-CONNECTION-STRING-payments-api` points to the expected payments database and that `SQL_MANAGED_IDENTITY_OBJECT_ID` matches the Function App system-assigned identity principal id.
+If it still fails, verify the Function App setting `AZURE-SQL-CONNECTION-STRING-payments-api` points to the expected payments database and that `SQL_MANAGED_IDENTITY_CLIENT_ID` matches the Function App system-assigned identity application/client id.
 
 ## Issue: 403 or Host Lock Failures from Storage
 
@@ -212,7 +212,7 @@ Create a Key Vault private endpoint and link the private DNS zone to the applica
 After applying fixes, validate these items:
 
 1. `azd deploy payments-api --environment <environment>` succeeds.
-1. App Insights startup traces show `11 functions loaded`.
+1. App Insights startup traces show `12 functions loaded`.
 1. Startup traces map `api/configuration/initialize-sql` to `initializePaymentsDatabase`.
 1. `./infra/scripts/initialize-sql-via-function.ps1 -azureEnv <environment>` returns `Payments database initialized.`
 1. `SQL_INITIALIZATION_ENABLED` is reset to `false` after the script completes.
