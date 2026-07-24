@@ -542,7 +542,7 @@ The Core development environment has the custom controls solution deployed as ma
    npm ci
    npm run build
 
-   # Build the Power Platform solution package. This creates the managed zip file.
+   # Build the Power Platform solution package. This includes the PCF UI bundle and creates the managed zip file.
    Set-Location (Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls")
    dotnet restore ./ContosoRealEstateCustomControls.cdsproj
    dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release

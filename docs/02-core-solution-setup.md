@@ -38,7 +38,7 @@ To start contributing, you'll need to set up your developer environment. Here's 
    npm ci
    npm run build
 
-   # Build the Power Platform solution package. This creates the managed zip file.
+   # Build the Power Platform solution package. This includes the PCF UI bundle and creates the managed zip file.
    Set-Location (Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls")
    dotnet restore ./ContosoRealEstateCustomControls.cdsproj
    dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release
