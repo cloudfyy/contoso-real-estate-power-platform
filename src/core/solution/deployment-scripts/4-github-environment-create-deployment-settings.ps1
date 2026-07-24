@@ -14,7 +14,7 @@ Write-Host "This script creates deployment settings to add to a GitHub deploymen
 $envVars = GetEnvironmentVariables -azureEnv $azureEnv
 
 # Generate the deployment settings for a chose azure deployment for the core solution
-. "$PSScriptRoot\generate-deployment-settings.ps1" $envVars.AZURE_ENV_NAME
+. "$PSScriptRoot\generate-deployment-settings.ps1" -azureEnv $envVars.AZURE_ENV_NAME
 
 # Load the deployment settings file created at 'temp_deploymentSettings_$($envVars.AZURE_ENV_NAME).json'
 $deploymentSettingsFile = "$PSScriptRoot\temp_deploymentSettings_$($envVars.AZURE_ENV_NAME).json"

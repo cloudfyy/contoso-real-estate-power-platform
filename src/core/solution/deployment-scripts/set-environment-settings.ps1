@@ -4,6 +4,9 @@ param (
     [bool]$skipLoginChecks
 )
 . "$PSScriptRoot\function-get-environment-variables.ps1"
+$environment = pac env who --json | ConvertFrom-Json
+$environmentName = $environment.FriendlyName
+
 # Check the user is logged into AZ CLI and PAC
 if (-not $skipLoginChecks) {
     CheckPACCLI
@@ -12,9 +15,6 @@ if (-not $skipLoginChecks) {
         exit
     }
 }
-
-$environment = pac env who --json | ConvertFrom-Json
-$environmentName = $environment.FriendlyName
 
 
 # Read the $PSScriptRoot/../environment-settings.json file

@@ -132,7 +132,7 @@ function RezipSolution {
 # If the $apiAppId is not specified, load from a local .azure deployment
 if (-not $pluginManagedIdentityAppId) {
     . "$PSScriptRoot\function-get-environment-variables.ps1" 
-    $envVars = GetEnvironmentVariables $azureEnv
+    $envVars = GetEnvironmentVariables -azureEnv $azureEnv
     $pluginManagedIdentityAppId = $envVars.ENTRA_API_CLIENT_APP_ID
     $tenantId = $envVars.AZURE_TENANT_ID
 }

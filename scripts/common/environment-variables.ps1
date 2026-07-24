@@ -115,3 +115,56 @@ function GetDefaultAzureEnvironmentName {
     $firstFolder = $folders | Select-Object -First 1
     return $firstFolder.Name
 }
+
+function ConfirmPrompt {
+    param (
+        [string]$message
+    )
+
+    Write-Host @"
+$message (Y/N)
+"@ -ForegroundColor Yellow
+
+    $confirm = Read-Host
+
+    if ($confirm.ToUpper() -ne 'Y') {
+        return $false
+    }
+
+    return $true
+}
+
+function CheckAZCLI {
+    Write-Progress -Activity "Checking access via Azure CLI..."
+    try {
+        $accountInfo = az account show 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "You are not logged into Azure CLI. Please run 'az login' to log in." -ForegroundColor Red
+            exit 1
+        }
+
+        $azureAccount = $accountInfo | ConvertFrom-Json
+        Write-Host "You are logged in to Azure as '$($azureAccount.user.name)' for the subscription '$($azureAccount.user.name)'" -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host "An error occurred while checking Azure CLI login status." -ForegroundColor Red
+        exit 1
+    }
+    Write-Progress -Activity "Checking access via Azure CLI..." -Completed
+}
+
+function CheckPACCLI {
+    Write-Progress -Activity "Checking access via Power Platform CLI..."
+    try {
+        $environment = pac env who --json | ConvertFrom-Json
+        $environmentName = $environment.FriendlyName
+        $pacUserName = $environment.UserEmail
+
+        Write-Host "You are currently authenticated to the Power Platform CLI as '$pacUserName' for the environment '$environmentName'" -ForegroundColor Cyan
+    }
+    catch {
+        Write-Host "An error occurred while checking Power Platform CLI login status." -ForegroundColor Red
+        exit 1
+    }
+    Write-Progress -Activity "Checking access via Power Platform CLI..." -Completed
+}

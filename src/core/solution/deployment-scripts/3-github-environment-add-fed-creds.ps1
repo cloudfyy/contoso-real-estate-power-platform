@@ -7,7 +7,7 @@ param (
 
 Write-Host "This script sets up a GitHub environment federated credentials for deployment to a specific environment" -ForegroundColor White
 . "$PSScriptRoot\function-get-environment-variables.ps1"
-$envVars = GetEnvironmentVariables $azureEnv
+$envVars = GetEnvironmentVariables -azureEnv $azureEnv
 $azureEnv = $envVars.AZURE_ENV_NAME
 
 # Check the user is logged into AZ CLI and PAC
