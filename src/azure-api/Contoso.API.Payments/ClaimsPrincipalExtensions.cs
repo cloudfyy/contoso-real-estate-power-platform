@@ -18,7 +18,9 @@ public static class ClaimsPrincipalExtensions
         {
             return true;
         }
-        var userRoles = claimsPrincipal.Claims.Where(e => e.Type == "roles").Select(e => e.Value);
+        var userRoles = claimsPrincipal.Claims
+            .Where(e => e.Type == "roles" || e.Type == ClaimTypes.Role)
+            .Select(e => e.Value);
 
         // Check that userRoles.Contains all the parameter roles
         bool allRoleDemandsMet = roleDemands.All(role => userRoles.Contains(role));

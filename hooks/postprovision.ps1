@@ -55,7 +55,7 @@ Write-Host "Updating Function App authentication secret setting"
 az functionapp config appsettings set `
 	--resource-group $resourceGroupName `
 	--name $functionAppName `
-	--settings "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET=$($credential.secretText)" `
+	--settings "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET=$($credential.secretText)" "PAYMENTS_API_CLIENT_SECRET=$($credential.secretText)" `
 	--output none
 
 $existingCredentials = az ad app credential list --id $clientAppId --output json | ConvertFrom-Json

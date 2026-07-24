@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 using Azure.Core;
 using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+using Azure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -33,7 +35,9 @@ enum PaymentAppRoles
 {
     CanQueryPayments,
     CanAddPayments,
-    CanInitializePaymentsDatabase
+    CanInitializePaymentsDatabase,
+    CanConfigureStripe,
+    CanValidatePaymentsConfiguration
 }
 public class PaymentFunction
 {
@@ -190,7 +194,7 @@ public class PaymentFunction
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Initialization endpoint is disabled")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
     public async Task<IActionResult> InitializePaymentsDatabase(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "database/initialize-sql")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "configuration/initialize-sql")] HttpRequest req)
     {
         try
         {
@@ -240,8 +244,162 @@ public class PaymentFunction
         catch (Exception ex)
         {
             this._logger.LogError(ex, "initializePaymentsDatabase function: error occurred");
-            return new StatusCodeResult((int)HttpStatusCode.InternalServerError);
+            return GetConfigurationErrorResult("SQL initialization failed.", ex);
         }
+    }
+
+    [Function("configureStripe")]
+    [OpenApiOperation(operationId: "configureStripe", tags: new[] { "configuration" }, Summary = "Configure Stripe", Description = "Stores Stripe configuration secrets in Key Vault")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(StripeConfigurationRequest), Required = true, Description = "Stripe configuration secrets")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.OK, Description = "OK - Stripe configuration stored")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.BadRequest, Description = "Invalid request")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Stripe configuration endpoint is disabled")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
+    public async Task<IActionResult> ConfigureStripe(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "configuration/configure-stripe")] HttpRequest req)
+    {
+        try
+        {
+            var configurationEnabledValue = _configuration["STRIPE_CONFIGURATION_ENABLED"];
+            if (!bool.TryParse(configurationEnabledValue, out bool configurationEnabled) || !configurationEnabled)
+            {
+                this._logger.LogWarning("configureStripe endpoint is disabled. STRIPE_CONFIGURATION_ENABLED value: '{ConfigurationEnabledValue}'", configurationEnabledValue ?? "<null>");
+                return new ContentResult
+                {
+                    StatusCode = (int)HttpStatusCode.NotFound,
+                    ContentType = "application/json",
+                    Content = JsonConvert.SerializeObject(new
+                    {
+                        message = "Stripe configuration endpoint is disabled. Set STRIPE_CONFIGURATION_ENABLED=true and restart the Function App before retrying.",
+                        stripeConfigurationEnabled = configurationEnabledValue
+                    })
+                };
+            }
+
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanConfigureStripe.ToString());
+
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            var stripeConfiguration = JsonConvert.DeserializeObject<StripeConfigurationRequest>(requestBody);
+            if (stripeConfiguration == null || string.IsNullOrWhiteSpace(stripeConfiguration.StripeApiKey) || string.IsNullOrWhiteSpace(stripeConfiguration.StripeWebhookSecret))
+            {
+                return new BadRequestObjectResult(new { error = "StripeApiKey and StripeWebhookSecret are required." });
+            }
+
+            await ConfigureStripeInternal(stripeConfiguration);
+            return new OkObjectResult(new { message = "Stripe configuration stored." });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogWarning(ex, $"configureStripe unauthorized access attempt. {ex.Message}");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "configureStripe function: error occurred");
+            return GetConfigurationErrorResult("Stripe configuration failed.", ex);
+        }
+    }
+
+    [Function("validatePaymentsSqlConfiguration")]
+    [OpenApiOperation(operationId: "validatePaymentsSqlConfiguration", tags: new[] { "configuration" }, Summary = "Validate payments SQL configuration", Description = "Returns SQL table metadata and sample rows for configuration validation")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "OK - SQL validation data")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Configuration validation endpoint is disabled")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
+    public async Task<IActionResult> ValidatePaymentsSqlConfiguration(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "configuration/validate-sql")] HttpRequest req)
+    {
+        try
+        {
+            var disabledResult = GetConfigurationValidationDisabledResult("validatePaymentsSqlConfiguration");
+            if (disabledResult != null)
+            {
+                return disabledResult;
+            }
+
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanValidatePaymentsConfiguration.ToString());
+
+            var validationResult = await ValidatePaymentsSqlConfigurationInternal();
+            return new OkObjectResult(validationResult);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogWarning(ex, $"validatePaymentsSqlConfiguration unauthorized access attempt. {ex.Message}");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "validatePaymentsSqlConfiguration function: error occurred");
+            return GetConfigurationErrorResult("Configuration validation failed.", ex);
+        }
+    }
+
+    [Function("validatePaymentsKeyVaultConfiguration")]
+    [OpenApiOperation(operationId: "validatePaymentsKeyVaultConfiguration", tags: new[] { "configuration" }, Summary = "Validate payments Key Vault configuration", Description = "Returns Key Vault secret metadata and masked configured secret values")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "OK - Key Vault validation data")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Configuration validation endpoint is disabled")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
+    public async Task<IActionResult> ValidatePaymentsKeyVaultConfiguration(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "configuration/validate-key-vault")] HttpRequest req)
+    {
+        try
+        {
+            var disabledResult = GetConfigurationValidationDisabledResult("validatePaymentsKeyVaultConfiguration");
+            if (disabledResult != null)
+            {
+                return disabledResult;
+            }
+
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanValidatePaymentsConfiguration.ToString());
+
+            var validationResult = await ValidatePaymentsKeyVaultConfigurationInternal();
+            return new OkObjectResult(validationResult);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogWarning(ex, $"validatePaymentsKeyVaultConfiguration unauthorized access attempt. {ex.Message}");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "validatePaymentsKeyVaultConfiguration function: error occurred");
+            return GetConfigurationErrorResult("Configuration validation failed.", ex);
+        }
+    }
+
+    private static ContentResult GetConfigurationErrorResult(string message, Exception ex)
+    {
+        return new ContentResult
+        {
+            StatusCode = (int)HttpStatusCode.InternalServerError,
+            ContentType = "application/json",
+            Content = JsonConvert.SerializeObject(new
+            {
+                message,
+                error = ex.Message,
+                errorType = ex.GetType().FullName
+            })
+        };
+    }
+
+    private ContentResult GetConfigurationValidationDisabledResult(string functionName)
+    {
+        var validationEnabledValue = _configuration["CONFIGURATION_VALIDATION_ENABLED"];
+        if (bool.TryParse(validationEnabledValue, out bool validationEnabled) && validationEnabled)
+        {
+            return null;
+        }
+
+        this._logger.LogWarning("{FunctionName} endpoint is disabled. CONFIGURATION_VALIDATION_ENABLED value: '{ValidationEnabledValue}'", functionName, validationEnabledValue ?? "<null>");
+        return new ContentResult
+        {
+            StatusCode = (int)HttpStatusCode.NotFound,
+            ContentType = "application/json",
+            Content = JsonConvert.SerializeObject(new
+            {
+                message = "Configuration validation endpoints are disabled. Set CONFIGURATION_VALIDATION_ENABLED=true and restart the Function App before retrying.",
+                configurationValidationEnabled = validationEnabledValue
+            })
+        };
     }
 
     private static ClaimsPrincipal GetAuthenticatedPrincipal(HttpRequest req)
@@ -398,6 +556,37 @@ public class PaymentFunction
         var managedIdentityIdentifier = QuoteSqlIdentifier(managedIdentityName);
         var managedIdentitySid = ToSqlSidHex(managedIdentityObjectId);
         command.CommandText = $@"
+IF EXISTS (
+    SELECT *
+    FROM sys.database_principals
+    WHERE name = N'{managedIdentityLiteral}' AND sid <> {managedIdentitySid}
+)
+BEGIN
+    IF EXISTS (
+        SELECT *
+        FROM sys.database_role_members members
+        INNER JOIN sys.database_principals roles ON members.role_principal_id = roles.principal_id
+        INNER JOIN sys.database_principals users ON members.member_principal_id = users.principal_id
+        WHERE roles.name = N'db_datareader' AND users.name = N'{managedIdentityLiteral}'
+    )
+    BEGIN
+        EXEC(N'ALTER ROLE [db_datareader] DROP MEMBER {managedIdentityIdentifier}');
+    END
+
+    IF EXISTS (
+        SELECT *
+        FROM sys.database_role_members members
+        INNER JOIN sys.database_principals roles ON members.role_principal_id = roles.principal_id
+        INNER JOIN sys.database_principals users ON members.member_principal_id = users.principal_id
+        WHERE roles.name = N'db_datawriter' AND users.name = N'{managedIdentityLiteral}'
+    )
+    BEGIN
+        EXEC(N'ALTER ROLE [db_datawriter] DROP MEMBER {managedIdentityIdentifier}');
+    END
+
+    EXEC(N'DROP USER {managedIdentityIdentifier}');
+END
+
 IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = N'{managedIdentityLiteral}')
 BEGIN
     EXEC(N'CREATE USER {managedIdentityIdentifier} WITH SID = {managedIdentitySid}, TYPE = E');
@@ -444,6 +633,173 @@ END;
         await command.ExecuteNonQueryAsync();
     }
 
+    internal async Task ConfigureStripeInternal(StripeConfigurationRequest stripeConfiguration)
+    {
+        var keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"];
+        if (string.IsNullOrWhiteSpace(keyVaultEndpoint))
+        {
+            throw new InvalidOperationException("Key Vault endpoint was not configured.");
+        }
+
+        TokenCredential credential = EnvironmentExtensions.IsTestEnvironment() ? new AzureCliCredential() : new DefaultAzureCredential();
+        var secretClient = new SecretClient(new Uri(keyVaultEndpoint), credential);
+
+        await secretClient.SetSecretAsync("StripeApiKey", stripeConfiguration.StripeApiKey);
+        await secretClient.SetSecretAsync("StripeWebhookSecret", stripeConfiguration.StripeWebhookSecret);
+    }
+
+    internal async Task<object> ValidatePaymentsSqlConfigurationInternal()
+    {
+        await using SqlConnection sqlConnection = await Connect();
+
+        var tables = new List<object>();
+        await using SqlCommand tableCommand = sqlConnection.CreateCommand();
+        tableCommand.CommandText = @"
+SELECT TABLE_SCHEMA, TABLE_NAME
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_TYPE = 'BASE TABLE'
+ORDER BY TABLE_SCHEMA, TABLE_NAME;";
+
+        await using SqlDataReader tableReader = await tableCommand.ExecuteReaderAsync();
+        var tableNames = new List<(string Schema, string Name)>();
+        while (await tableReader.ReadAsync())
+        {
+            tableNames.Add((tableReader.GetString(0), tableReader.GetString(1)));
+        }
+
+        await tableReader.CloseAsync();
+
+        foreach (var table in tableNames)
+        {
+            var columns = new List<object>();
+            await using SqlCommand columnCommand = sqlConnection.CreateCommand();
+            columnCommand.CommandText = @"
+SELECT COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table
+ORDER BY ORDINAL_POSITION;";
+            columnCommand.Parameters.AddWithValue("@schema", table.Schema);
+            columnCommand.Parameters.AddWithValue("@table", table.Name);
+
+            await using SqlDataReader columnReader = await columnCommand.ExecuteReaderAsync();
+            while (await columnReader.ReadAsync())
+            {
+                columns.Add(new
+                {
+                    name = columnReader.GetString(0),
+                    dataType = columnReader.GetString(1)
+                });
+            }
+
+            await columnReader.CloseAsync();
+
+            var quotedTableName = $"{QuoteSqlIdentifier(table.Schema)}.{QuoteSqlIdentifier(table.Name)}";
+            await using SqlCommand countCommand = sqlConnection.CreateCommand();
+            countCommand.CommandText = $"SELECT COUNT_BIG(*) FROM {quotedTableName};";
+            var rowCount = (long)await countCommand.ExecuteScalarAsync();
+
+            await using SqlCommand sampleCommand = sqlConnection.CreateCommand();
+            sampleCommand.CommandText = $"SELECT TOP (10) * FROM {quotedTableName};";
+            var sampleRows = await ReadRowsAsync(sampleCommand);
+
+            tables.Add(new
+            {
+                schema = table.Schema,
+                name = table.Name,
+                rowCount,
+                columns,
+                sampleRows
+            });
+        }
+
+        return new
+        {
+            generatedAt = DateTimeOffset.UtcNow,
+            tables
+        };
+    }
+
+    internal async Task<object> ValidatePaymentsKeyVaultConfigurationInternal()
+    {
+        var keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"];
+        if (string.IsNullOrWhiteSpace(keyVaultEndpoint))
+        {
+            throw new InvalidOperationException("Key Vault endpoint was not configured.");
+        }
+
+        TokenCredential credential = EnvironmentExtensions.IsTestEnvironment() ? new AzureCliCredential() : new DefaultAzureCredential();
+        var secretClient = new SecretClient(new Uri(keyVaultEndpoint), credential);
+        var secretNames = new[] { "StripeApiKey", "StripeWebhookSecret" };
+        var secrets = new List<object>();
+
+        foreach (var secretName in secretNames)
+        {
+            try
+            {
+                KeyVaultSecret secret = await secretClient.GetSecretAsync(secretName);
+                secrets.Add(new
+                {
+                    name = secretName,
+                    exists = true,
+                    enabled = secret.Properties.Enabled,
+                    updatedOn = secret.Properties.UpdatedOn,
+                    value = MaskSecret(secret.Value)
+                });
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                secrets.Add(new
+                {
+                    name = secretName,
+                    exists = false,
+                    enabled = (bool?)null,
+                    updatedOn = (DateTimeOffset?)null,
+                    value = (string)null
+                });
+            }
+        }
+
+        return new
+        {
+            generatedAt = DateTimeOffset.UtcNow,
+            keyVaultEndpoint,
+            secrets
+        };
+    }
+
+    private static async Task<List<Dictionary<string, object>>> ReadRowsAsync(SqlCommand command)
+    {
+        var rows = new List<Dictionary<string, object>>();
+        await using SqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var row = new Dictionary<string, object>();
+            for (var columnIndex = 0; columnIndex < reader.FieldCount; columnIndex++)
+            {
+                row[reader.GetName(columnIndex)] = await reader.IsDBNullAsync(columnIndex) ? null : reader.GetValue(columnIndex);
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    private static string MaskSecret(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        if (value.Length <= 8)
+        {
+            return new string('*', value.Length);
+        }
+
+        return $"{value[..4]}****{value[^4..]}";
+    }
+
     private static string QuoteSqlIdentifier(string value)
     {
         return $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
@@ -487,6 +843,12 @@ public class Payment
     public decimal Amount { get; set; }
     public string Currency { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+public class StripeConfigurationRequest
+{
+    public string StripeApiKey { get; set; }
+    public string StripeWebhookSecret { get; set; }
 }
 
 public enum PaymentStatus

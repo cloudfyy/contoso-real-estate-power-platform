@@ -14,7 +14,7 @@ function AssignRolesToPrincipal {
     )
 
     # Convert the comma-separated list to an array
-    $roleNamesArray = $roleNames -split ','
+    $roleNamesArray = $roleNames -split ',' | ForEach-Object { $_.Trim() }
 
     
     $appRoles = $(az ad app show --id $appId --query "appRoles" --output json)
@@ -29,9 +29,12 @@ function AssignRolesToPrincipal {
         --query "value[?principalId=='$principalId'].appRoleId" `
         --output tsv
 
+    $matchedRoleNames = @()
+
     # Loop through each object and get the id if the value is in the list
     foreach ($item in $appRoles) {
         if ($roleNamesArray -contains $item.value) {
+            $matchedRoleNames += $item.value
             if ($existingAssignments -contains $item.id) {
                 Write-Host "Role $($item.value)[$($item.id)] is already assigned to principal [$principalId]" -ForegroundColor Yellow
                 continue
@@ -61,6 +64,11 @@ function AssignRolesToPrincipal {
             }
         }
     }
+
+    $missingRoleNames = $roleNamesArray | Where-Object { $matchedRoleNames -notcontains $_ }
+    if ($missingRoleNames.Count -gt 0) {
+        throw "The Payments API app registration does not define these app roles: $($missingRoleNames -join ', '). Run azd provision to apply the latest app role definitions, then rerun this script."
+    }
 }
 # -----------------------------------------------------------------------
 # Import the environment variables
@@ -75,12 +83,12 @@ $appId = $envVars.ENTRA_API_APP_ID
 # Assign the roles to the current user for testing
 Write-Host "Granting access to the Payment API for the current user" -ForegroundColor Green
 $currentUserPrincipalId=$(az ad signed-in-user show --query id -o tsv)
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase" -principalId $currentUserPrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration" -principalId $currentUserPrincipalId -appId $appId
 
 # The Client for Contoso Real Estate Payments API needs admin consent if it's used as a service principal to access the API
 Write-Host "Granting access to the Payment API for the SPN used in connections" -ForegroundColor Green
 $clientServicePrincipalId = az ad sp list --filter "appId eq '$($envVars.ENTRA_API_CLIENT_APP_ID)'" --query "[0].id" --output tsv
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase" -principalId $clientServicePrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration" -principalId $clientServicePrincipalId -appId $appId
 az ad app permission admin-consent --id $envVars.ENTRA_API_CLIENT_APP_ID
 
 Write-Host "Complete" -ForegroundColor Green

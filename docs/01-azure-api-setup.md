@@ -151,7 +151,7 @@ Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyon
     ./infra/scripts/post-deployment-setup.ps1
     ```
 
-    The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/database/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
+    The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/configuration/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
 
     If you only need to rerun the SQL initialization step, run:
 
@@ -197,7 +197,7 @@ To create a managed identity for the Azure Function:
 
 ### Initialize the database with the Function API
 
-The SQL server has public network access disabled, so initialization must run from inside Azure. The Payments API Function App is integrated with the SQL private endpoint network and exposes a protected initialization endpoint at `POST /api/database/initialize-sql`.
+The SQL server has public network access disabled, so initialization must run from inside Azure. The Payments API Function App is integrated with the SQL private endpoint network and exposes a protected initialization endpoint at `POST /api/configuration/initialize-sql`.
 
 The endpoint is disabled by default. The initialization script temporarily adds the Function App managed identity to the SQL Entra admin group, enables the endpoint, calls it, disables the endpoint, and then removes the temporary admin membership.
 

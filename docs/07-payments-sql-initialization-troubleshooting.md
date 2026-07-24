@@ -14,7 +14,7 @@ The initialization script performs these steps:
 1. Sets that group as the SQL Entra administrator.
 1. Temporarily sets `SQL_INITIALIZATION_ENABLED=true` and `SQL_MANAGED_IDENTITY_OBJECT_ID=<function-principal-id>` on the Function App.
 1. Restarts the Function App and waits for `GET /api/ping/function-ready`.
-1. Calls `POST /api/database/initialize-sql` with a client credentials token for the Payments API app registration.
+1. Calls `POST /api/configuration/initialize-sql` with a client credentials token for the Payments API app registration.
 1. Disables the initialization endpoint and removes the Function App identity from the temporary SQL admin group.
 
 After a successful run, `SQL_INITIALIZATION_ENABLED` should be `false` and the Function App identity should keep only database-level permissions.
@@ -80,13 +80,13 @@ Fix:
 Use a non-reserved route. The Payments API uses:
 
 ```text
-POST /api/database/initialize-sql
+POST /api/configuration/initialize-sql
 ```
 
 After redeployment, startup traces should show:
 
 ```text
-Mapped function route 'api/database/initialize-sql' [post] to 'initializePaymentsDatabase'
+Mapped function route 'api/configuration/initialize-sql' [post] to 'initializePaymentsDatabase'
 ```
 
 ## Issue: 401 Unauthorized After the Route Is Mapped
@@ -105,6 +105,17 @@ The Function App uses App Service Authentication, also known as EasyAuth, with `
 Fix:
 
 When `HttpContext.User` does not contain `roles`, parse the EasyAuth-provided `X-MS-CLIENT-PRINCIPAL` header and use those claims for the existing role check.
+
+Also accept both `roles` and the standard role claim URI (`http://schemas.microsoft.com/ws/2008/06/identity/claims/role`) when checking app roles, because the role claim type can be mapped by the authentication middleware.
+
+If the setup script keeps receiving 401 responses, decode the client credentials token and confirm:
+
+- `aud` is `api://<ENTRA_API_APP_ID>`.
+- `roles` contains the role required by the endpoint, such as `CanValidatePaymentsConfiguration`.
+
+If the token does not contain the expected role immediately after assigning app roles, reacquire the token after a short delay. Reusing the same token will keep returning 401 because role claims are fixed when the token is issued.
+
+Do not store regenerated Payments API client secrets in `MICROSOFT_PROVIDER_AUTHENTICATION_SECRET`. That setting is used by App Service Authentication. Use `PAYMENTS_API_CLIENT_SECRET` for setup scripts so regenerating the client secret does not overwrite EasyAuth configuration before a Function App restart.
 
 ## Issue: 500 During `CREATE USER ... FROM EXTERNAL PROVIDER`
 
@@ -133,6 +144,38 @@ CREATE USER [<function-app-name>] WITH SID = 0x<object-id-guid-bytes>, TYPE = E;
 ```
 
 The script sets `SQL_MANAGED_IDENTITY_OBJECT_ID` from the Function App system-assigned identity principal id. The API converts that object id to the SID format expected by SQL Server.
+
+## Issue: 500 `Login failed for user '<token-identified principal>'` During Validation
+
+Symptoms:
+
+- `validate-payments-configuration.ps1` gets a token containing the expected audience and role.
+- The validation endpoint returns `500 Internal Server Error`.
+- The response body contains:
+
+```text
+Login failed for user '<token-identified principal>'.
+```
+
+Cause:
+
+Authentication to the Payments API succeeded, but Azure SQL rejected the Function App managed identity. This usually means the target database does not have a user for the Function App identity, or the Function App connection string points to a different database than the one initialized.
+
+Fix:
+
+Run the SQL initialization script for the same environment:
+
+```powershell
+./infra/scripts/initialize-sql-via-function.ps1 -azureEnv <environment>
+```
+
+Then rerun:
+
+```powershell
+./infra/scripts/validate-payments-configuration.ps1 -azureEnv <environment>
+```
+
+If it still fails, verify the Function App setting `AZURE-SQL-CONNECTION-STRING-payments-api` points to the expected payments database and that `SQL_MANAGED_IDENTITY_OBJECT_ID` matches the Function App system-assigned identity principal id.
 
 ## Issue: 403 or Host Lock Failures from Storage
 
@@ -170,7 +213,7 @@ After applying fixes, validate these items:
 
 1. `azd deploy payments-api --environment <environment>` succeeds.
 1. App Insights startup traces show `11 functions loaded`.
-1. Startup traces map `api/database/initialize-sql` to `initializePaymentsDatabase`.
+1. Startup traces map `api/configuration/initialize-sql` to `initializePaymentsDatabase`.
 1. `./infra/scripts/initialize-sql-via-function.ps1 -azureEnv <environment>` returns `Payments database initialized.`
 1. `SQL_INITIALIZATION_ENABLED` is reset to `false` after the script completes.
 1. No new `AzureWebJobsStorage`, `AuthorizationFailure`, route conflict, or SQL principal resolution errors appear in recent Application Insights logs.

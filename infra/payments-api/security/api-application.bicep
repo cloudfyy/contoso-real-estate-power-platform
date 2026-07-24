@@ -18,6 +18,8 @@ var canCreateStripeSessionsAppRoleId = guid(resourceGroup().id, applicationUniqu
 var canQueryPaymentsAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanQueryPayments')
 var canAddPaymentsAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanAddPayments')
 var canInitializePaymentsDatabaseAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanInitializePaymentsDatabase')
+var canConfigureStripeAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanConfigureStripe')
+var canValidatePaymentsConfigurationAppRoleId = guid(resourceGroup().id, applicationUniqueName, 'CanValidatePaymentsConfiguration')
 
 // Define the Entra ID application registration
 // https://learn.microsoft.com/en-us/graph/templates/reference/applications?view=graph-bicep-1.0
@@ -86,6 +88,28 @@ resource apiApplication 'Microsoft.Graph/applications@v1.0' = {
       isEnabled: true
       value: 'CanInitializePaymentsDatabase'
     }
+    {
+      id: canConfigureStripeAppRoleId
+      allowedMemberTypes: [
+        'User'
+        'Application'
+      ]
+      description: 'Members of this role can configure Stripe payment settings.'
+      displayName: 'Can Configure Stripe'
+      isEnabled: true
+      value: 'CanConfigureStripe'
+    }
+    {
+      id: canValidatePaymentsConfigurationAppRoleId
+      allowedMemberTypes: [
+        'User'
+        'Application'
+      ]
+      description: 'Members of this role can validate payments SQL and Key Vault configuration.'
+      displayName: 'Can Validate Payments Configuration'
+      isEnabled: true
+      value: 'CanValidatePaymentsConfiguration'
+    }
   ]
   description: name
   displayName: name
@@ -151,6 +175,14 @@ resource clientApp 'Microsoft.Graph/applications@v1.0' = if (newOrExisting == 'n
 				}
         {
           id: canInitializePaymentsDatabaseAppRoleId // CanInitializePaymentsDatabase app role to allow the setup script to initialize the database
+          type: 'Role'
+        }
+        {
+          id: canConfigureStripeAppRoleId // CanConfigureStripe app role to allow the setup script to configure Stripe secrets
+          type: 'Role'
+        }
+        {
+          id: canValidatePaymentsConfigurationAppRoleId // CanValidatePaymentsConfiguration app role to allow validation scripts to inspect configuration
           type: 'Role'
         }
 			]

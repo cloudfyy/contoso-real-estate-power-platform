@@ -59,12 +59,23 @@ module storageRoles '../core/security/role.bicep' = [for roleId in builtInStorag
 
 var builtInRoles = loadJsonContent('../built-in-roles.json')
 
-// Give the API access to KeyVault
-resource roleIdMapping_roleName_objectId_Microsoft_KeyVault_vaults_keyVault 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+// Give the API access to read Key Vault secrets
+resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
   scope: keyVault
   name: guid(builtInRoles.KeyVaultSecretsUser, keyVault.id)
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions',builtInRoles.KeyVaultSecretsUser)
+    principalId: api.outputs.identityPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Allow the API setup endpoint to store Stripe secrets in Key Vault
+resource keyVaultSecretsOfficerRole 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  scope: keyVault
+  name: guid(builtInRoles.KeyVaultSecretsOfficer, keyVault.id)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', builtInRoles.KeyVaultSecretsOfficer)
     principalId: api.outputs.identityPrincipalId
     principalType: 'ServicePrincipal'
   }

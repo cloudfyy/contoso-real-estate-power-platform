@@ -50,10 +50,15 @@ function GetEnvironmentVariables {
     
         $folders = Get-ChildItem -Path $azureFolderPath -Directory
         if ($azureEnv -eq "") {
+            $defaultFolder = $folders | Select-Object -First 1
             $folders | ForEach-Object {
-                Write-Host "[$($_.Name)]"
+                $defaultMarker = if ($_.Name -eq $defaultFolder.Name) { ' (default)' } else { '' }
+                Write-Host "[$($_.Name)]$defaultMarker"
             }
-            $selectedFolder = Read-Host "Enter the azure environment configuration"
+            $selectedFolder = Read-Host "Enter the azure environment configuration [$($defaultFolder.Name)]"
+            if ([string]::IsNullOrWhiteSpace($selectedFolder)) {
+                $selectedFolder = $defaultFolder.Name
+            }
             # Strip square brakets if they are entered
             $selectedFolder = $selectedFolder -replace "\[|\]",""
         }

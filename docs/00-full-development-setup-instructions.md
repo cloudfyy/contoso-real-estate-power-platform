@@ -515,7 +515,7 @@ To perform the post deployment:
 
    Enter the environment that you deployed using azd. If you have deployed multiple times with different names, then you must pick the one you are setting up.
 
-   The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/database/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
+   The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/configuration/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
 
    If you only need to rerun the SQL initialization step, run:
 

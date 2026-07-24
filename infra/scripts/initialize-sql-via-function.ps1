@@ -114,6 +114,85 @@ function Get-PaymentsApiAccessToken {
     }
 }
 
+function ConvertFrom-Base64Url {
+    param (
+        [string]$Value
+    )
+
+    $base64 = $Value.Replace('-', '+').Replace('_', '/')
+    switch ($base64.Length % 4) {
+        2 { $base64 += '==' }
+        3 { $base64 += '=' }
+    }
+
+    return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($base64))
+}
+
+function Get-JwtPayload {
+    param (
+        [string]$Token
+    )
+
+    $parts = $Token.Split('.')
+    if ($parts.Length -lt 2) {
+        throw 'The Payments API access token was not a valid JWT.'
+    }
+
+    return ConvertFrom-Json (ConvertFrom-Base64Url -Value $parts[1])
+}
+
+function Get-ClaimValues {
+    param (
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return @()
+    }
+
+    if ($Value -is [System.Array]) {
+        return @($Value | ForEach-Object { [string]$_ })
+    }
+
+    return @([string]$Value)
+}
+
+function Get-PaymentsApiAccessTokenWithRole {
+    param (
+        [string]$TenantId,
+        [string]$ApiAppId,
+        [string]$ApiClientAppId,
+        [string]$ApiClientSecret,
+        [string]$RequiredRole,
+        [int]$RetryCount = 36
+    )
+
+    $expectedAudience = "api://$ApiAppId"
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        $token = Get-PaymentsApiAccessToken `
+            -TenantId $TenantId `
+            -ApiAppId $ApiAppId `
+            -ApiClientAppId $ApiClientAppId `
+            -ApiClientSecret $ApiClientSecret
+
+        $payload = Get-JwtPayload -Token $token
+        $audiences = Get-ClaimValues -Value $payload.aud
+        $roles = Get-ClaimValues -Value $payload.roles
+
+        if ($audiences -contains $expectedAudience -and $roles -contains $RequiredRole) {
+            Write-Host "Access token contains audience '$expectedAudience' and role '$RequiredRole'." -ForegroundColor Yellow
+            return $token
+        }
+
+        $audienceDisplay = if ($audiences.Count -gt 0) { $audiences -join ', ' } else { '<none>' }
+        $roleDisplay = if ($roles.Count -gt 0) { $roles -join ', ' } else { '<none>' }
+        Write-Host "Access token does not contain the expected claims yet (attempt $attempt/$RetryCount, aud: $audienceDisplay, roles: $roleDisplay)." -ForegroundColor Yellow
+        Start-Sleep -Seconds 5
+    }
+
+    throw "Could not acquire an access token containing audience '$expectedAudience' and role '$RequiredRole'. Check the app role assignment and admin consent for client app '$ApiClientAppId'."
+}
+
 function New-PaymentsApiClientSecret {
     param (
         [string]$ClientAppObjectId
@@ -163,8 +242,21 @@ function Invoke-SqlInitializationWithRetry {
                 -Headers @{ Authorization = "Bearer $Token" }
         }
         catch {
-            $statusCode = [int]$_.Exception.Response.StatusCode
+            $statusCode = if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
             if ($statusCode -notin @(404, 502, 503, 504)) {
+                $responseBody = $_.ErrorDetails.Message
+                if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+                    try {
+                        $errorResult = $responseBody | ConvertFrom-Json
+                        Write-Host "Initialization endpoint returned status ${statusCode}: $($errorResult.message)" -ForegroundColor Red
+                        Write-Host "Error: $($errorResult.error)" -ForegroundColor Red
+                        Write-Host "Error type: $($errorResult.errorType)" -ForegroundColor Red
+                    }
+                    catch {
+                        Write-Host "Initialization endpoint returned status ${statusCode}: $responseBody" -ForegroundColor Red
+                    }
+                }
+
                 throw
             }
 
@@ -213,6 +305,58 @@ function Restart-FunctionAppAndWait {
     throw "Function App '$FunctionAppName' did not become ready after restart. Last checked '$readinessProbeUri'."
 }
 
+function Wait-FunctionAppSetting {
+    param (
+        [string]$ResourceGroupName,
+        [string]$FunctionAppName,
+        [string]$Name,
+        [string]$ExpectedValue,
+        [switch]$RedactValue
+    )
+
+    for ($attempt = 1; $attempt -le 30; $attempt++) {
+        $actualValue = az functionapp config appsettings list `
+            --resource-group $ResourceGroupName `
+            --name $FunctionAppName `
+            --query "[?name=='$Name'].value | [0]" `
+            --output tsv
+
+        if ($actualValue -eq $ExpectedValue) {
+            $displayValue = if ($RedactValue) { '<redacted>' } else { $actualValue }
+            Write-Host "Function App setting $Name=$displayValue" -ForegroundColor Yellow
+            return
+        }
+
+        $displayValue = if ($RedactValue) { '<redacted>' } else { $actualValue }
+        Write-Host "Waiting for Function App setting $Name to match expected value (attempt $attempt/30, current value '$displayValue')." -ForegroundColor Yellow
+        Start-Sleep -Seconds 5
+    }
+
+    throw "Function App setting '$Name' did not become the expected value."
+}
+
+function Set-PaymentsApiClientSecretSetting {
+    param (
+        [string]$ResourceGroupName,
+        [string]$FunctionAppName,
+        [string]$ApiClientSecret
+    )
+
+    Write-Host "Saving the new Payments API client secret to Function App settings" -ForegroundColor Yellow
+    az functionapp config appsettings set `
+        --resource-group $ResourceGroupName `
+        --name $FunctionAppName `
+        --settings "PAYMENTS_API_CLIENT_SECRET=$ApiClientSecret" `
+        --output none
+
+    Wait-FunctionAppSetting `
+        -ResourceGroupName $ResourceGroupName `
+        -FunctionAppName $FunctionAppName `
+        -Name 'PAYMENTS_API_CLIENT_SECRET' `
+        -ExpectedValue $ApiClientSecret `
+        -RedactValue
+}
+
 Write-Host "Initializing the payments SQL database through the Function App" -ForegroundColor White
 
 . "$PSScriptRoot\function-get-environment-variables.ps1"
@@ -226,12 +370,13 @@ $apiAppId = Get-RequiredValue $envVars.ENTRA_API_APP_ID 'ENTRA_API_APP_ID'
 $apiClientAppId = Get-RequiredValue $envVars.ENTRA_API_CLIENT_APP_ID 'ENTRA_API_CLIENT_APP_ID'
 $apiClientObjectId = Get-RequiredValue $envVars.ENTRA_API_CLIENT_OBJECT_ID 'ENTRA_API_CLIENT_OBJECT_ID'
 $tenantId = Get-RequiredValue $envVars.AZURE_TENANT_ID 'AZURE_TENANT_ID'
+$selectedAzureEnv = Get-RequiredValue $envVars.AZURE_ENV_NAME 'AZURE_ENV_NAME'
 
 $sqlServerName = "$resourcePrefix-sql"
 $sqlAdminGroupName = "$resourcePrefix-sql-admins"
 
 Write-Host "Ensuring the current user has the Payments API initialization role" -ForegroundColor Green
-& "$PSScriptRoot\grant-access-to-payment-api.ps1" -azureEnv $azureEnv
+& "$PSScriptRoot\grant-access-to-payment-api.ps1" -azureEnv $selectedAzureEnv
 
 $sqlAdminGroup = Get-OrCreateGroup -DisplayName $sqlAdminGroupName
 $currentUserObjectId = az ad signed-in-user show --query id --output tsv
@@ -258,15 +403,29 @@ try {
     $apiClientSecret = az functionapp config appsettings list `
         --resource-group $resourceGroupName `
         --name $functionAppName `
-        --query "[?name=='MICROSOFT_PROVIDER_AUTHENTICATION_SECRET'].value | [0]" `
+        --query "[?name=='PAYMENTS_API_CLIENT_SECRET'].value | [0]" `
         --output tsv
+
+    if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
+        Write-Host "PAYMENTS_API_CLIENT_SECRET is not set. Falling back to MICROSOFT_PROVIDER_AUTHENTICATION_SECRET for this run." -ForegroundColor Yellow
+        $apiClientSecret = az functionapp config appsettings list `
+            --resource-group $resourceGroupName `
+            --name $functionAppName `
+            --query "[?name=='MICROSOFT_PROVIDER_AUTHENTICATION_SECRET'].value | [0]" `
+            --output tsv
+    }
 
     if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
         throw "Could not read the Payments API client secret from Function App '$functionAppName'. Run azd provision to generate and apply the client secret."
     }
 
     try {
-        $token = Get-PaymentsApiAccessToken -TenantId $tenantId -ApiAppId $apiAppId -ApiClientAppId $apiClientAppId -ApiClientSecret $apiClientSecret -RetryCount 36
+        $token = Get-PaymentsApiAccessTokenWithRole `
+            -TenantId $tenantId `
+            -ApiAppId $apiAppId `
+            -ApiClientAppId $apiClientAppId `
+            -ApiClientSecret $apiClientSecret `
+            -RequiredRole 'CanInitializePaymentsDatabase'
     }
     catch {
         if ($_.ErrorDetails.Message -notlike '*invalid_client*') {
@@ -276,8 +435,17 @@ try {
         $apiClientSecret = New-PaymentsApiClientSecret `
             -ClientAppObjectId $apiClientObjectId
         $apiClientSecretGenerated = $true
+        Set-PaymentsApiClientSecretSetting `
+            -ResourceGroupName $resourceGroupName `
+            -FunctionAppName $functionAppName `
+            -ApiClientSecret $apiClientSecret
 
-        $token = Get-PaymentsApiAccessToken -TenantId $tenantId -ApiAppId $apiAppId -ApiClientAppId $apiClientAppId -ApiClientSecret $apiClientSecret -RetryCount 36
+        $token = Get-PaymentsApiAccessTokenWithRole `
+            -TenantId $tenantId `
+            -ApiAppId $apiAppId `
+            -ApiClientAppId $apiClientAppId `
+            -ApiClientSecret $apiClientSecret `
+            -RequiredRole 'CanInitializePaymentsDatabase'
     }
 
     if ([string]::IsNullOrWhiteSpace($token)) {
@@ -289,7 +457,7 @@ try {
         "SQL_MANAGED_IDENTITY_OBJECT_ID=$functionPrincipalId"
     )
     if ($apiClientSecretGenerated) {
-        $settings += "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET=$apiClientSecret"
+        $settings += "PAYMENTS_API_CLIENT_SECRET=$apiClientSecret"
     }
 
     Write-Host "Waiting for the Function App to apply initialization settings" -ForegroundColor Yellow
@@ -311,9 +479,9 @@ try {
         --output tsv
     Write-Host "Function App setting SQL_INITIALIZATION_ENABLED=$initializationSetting" -ForegroundColor Yellow
 
-    Write-Host "Calling $functionAppUri/api/database/initialize-sql" -ForegroundColor Green
+    Write-Host "Calling $functionAppUri/api/configuration/initialize-sql" -ForegroundColor Green
     Invoke-SqlInitializationWithRetry `
-        -Uri "$functionAppUri/api/database/initialize-sql" `
+        -Uri "$functionAppUri/api/configuration/initialize-sql" `
         -Token $token
 }
 finally {

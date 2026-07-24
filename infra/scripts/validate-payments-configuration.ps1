@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-# This script sets up the stripe payment keys
+# This script validates payments SQL and Key Vault configuration through the Payments API Function App.
 # -----------------------------------------------------------------------
 param (
     [string]$azureEnv
@@ -146,7 +146,7 @@ function New-PaymentsApiClientSecret {
 
     $body = @{
         passwordCredential = @{
-            displayName = 'Client Secret for Stripe configuration'
+            displayName = 'Client Secret for configuration validation'
             endDateTime = (Get-Date).ToUniversalTime().AddDays(60).ToString('yyyy-MM-ddTHH:mm:ssZ')
         }
     } | ConvertTo-Json -Depth 4 -Compress
@@ -256,141 +256,72 @@ function Set-PaymentsApiClientSecretSetting {
         -RedactValue
 }
 
-function Get-StripeWebhookFunctionKey {
-    param (
-        [string]$ResourceGroupName,
-        [string]$FunctionAppName,
-        [string]$FunctionName
-    )
-
-    $functionKey = az functionapp function keys list `
-        --function-name $FunctionName `
-        --name $FunctionAppName `
-        --resource-group $ResourceGroupName `
-        --query "default" `
-        --output tsv
-
-    if (![string]::IsNullOrWhiteSpace($functionKey)) {
-        return $functionKey
-    }
-
-    Write-Host "Function-specific key for '$FunctionName' was not found. Falling back to the Function App default host key." -ForegroundColor Yellow
-    $hostKey = az functionapp keys list `
-        --name $FunctionAppName `
-        --resource-group $ResourceGroupName `
-        --query "functionKeys.default" `
-        --output tsv
-
-    if (![string]::IsNullOrWhiteSpace($hostKey)) {
-        return $hostKey
-    }
-
-    throw "Could not retrieve a Function key for '$FunctionName' in Function App '$FunctionAppName'. Deploy the Function App and ensure the '$FunctionName' function exists before running this script."
-}
-
-function Invoke-StripeConfigurationWithRetry {
+function Invoke-ValidationEndpointWithRetry {
     param (
         [string]$Uri,
-        [string]$Token,
-        [string]$StripeApiKey,
-        [string]$StripeWebhookSecret
+        [string]$Token
     )
-
-    $requestBody = @{
-        stripeApiKey = $StripeApiKey
-        stripeWebhookSecret = $StripeWebhookSecret
-    } | ConvertTo-Json -Compress
 
     for ($attempt = 1; $attempt -le 60; $attempt++) {
         try {
             return Invoke-RestMethod `
-                -Method Post `
+                -Method Get `
                 -Uri $Uri `
-                -Headers @{ Authorization = "Bearer $Token" } `
-                -ContentType 'application/json' `
-                -Body $requestBody
+                -Headers @{ Authorization = "Bearer $Token" }
         }
         catch {
             $statusCode = if ($null -ne $_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-            if ($statusCode -notin @(404, 502, 503, 504)) {
+            if ($statusCode -notin @(401, 404, 502, 503, 504)) {
+                $responseBody = $_.ErrorDetails.Message
+                if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+                    try {
+                        $errorResult = $responseBody | ConvertFrom-Json
+                        Write-Host "Validation endpoint returned status ${statusCode}: $($errorResult.message)" -ForegroundColor Red
+                        Write-Host "Error: $($errorResult.error)" -ForegroundColor Red
+                        Write-Host "Error type: $($errorResult.errorType)" -ForegroundColor Red
+                    }
+                    catch {
+                        Write-Host "Validation endpoint returned status ${statusCode}: $responseBody" -ForegroundColor Red
+                    }
+
+                    if ($responseBody -like '*Login failed for user*token-identified principal*') {
+                        Write-Host "SQL rejected the Function App managed identity. Run initialize-sql-via-function.ps1, or verify the SQL connection string points to the initialized payments database." -ForegroundColor Yellow
+                    }
+                }
+
                 throw
             }
 
             $responseBody = $_.ErrorDetails.Message
             if ([string]::IsNullOrWhiteSpace($responseBody)) {
-                Write-Host "Stripe configuration endpoint not ready yet (attempt $attempt/60, status $statusCode)." -ForegroundColor Yellow
+                Write-Host "Validation endpoint not ready yet (attempt $attempt/60, status $statusCode)." -ForegroundColor Yellow
             }
             else {
-                Write-Host "Stripe configuration endpoint not ready yet (attempt $attempt/60, status $statusCode): $responseBody" -ForegroundColor Yellow
+                Write-Host "Validation endpoint not ready yet (attempt $attempt/60, status $statusCode): $responseBody" -ForegroundColor Yellow
             }
         }
 
         Start-Sleep -Seconds 5
     }
 
-    throw "The Function App did not apply Stripe configuration. Authenticated calls to '$Uri' kept returning a transient or disabled response."
+    throw "The Function App did not return validation data from '$Uri'. Authenticated calls kept returning a transient or disabled response."
 }
 
-# -----------------------------------------------------------------------
-# Import the environment variables
 . "$PSScriptRoot\function-get-environment-variables.ps1"
 $envVars = GetEnvironmentVariables -azureEnv $azureEnv
+$selectedAzureEnv = Get-RequiredValue $envVars.AZURE_ENV_NAME 'AZURE_ENV_NAME'
 
 $functionAppName = Get-RequiredValue $envVars.SERVICE_API_NAME 'SERVICE_API_NAME'
 $functionAppUri = Get-RequiredValue $envVars.SERVICE_API_URI 'SERVICE_API_URI'
-$functionName = "StripeWebhook"
 $resourceGroupName = Get-RequiredValue $envVars.AZURE_RESOURCE_GROUP 'AZURE_RESOURCE_GROUP'
 $apiAppId = Get-RequiredValue $envVars.ENTRA_API_APP_ID 'ENTRA_API_APP_ID'
 $apiClientAppId = Get-RequiredValue $envVars.ENTRA_API_CLIENT_APP_ID 'ENTRA_API_CLIENT_APP_ID'
 $apiClientObjectId = Get-RequiredValue $envVars.ENTRA_API_CLIENT_OBJECT_ID 'ENTRA_API_CLIENT_OBJECT_ID'
 $tenantId = Get-RequiredValue $envVars.AZURE_TENANT_ID 'AZURE_TENANT_ID'
-$selectedAzureEnv = Get-RequiredValue $envVars.AZURE_ENV_NAME 'AZURE_ENV_NAME'
 
-Write-Host "Ensuring the current user has the Payments API Stripe configuration role" -ForegroundColor Green
+Write-Host "Ensuring the current user has the Payments API configuration validation role" -ForegroundColor Green
 & "$PSScriptRoot\grant-access-to-payment-api.ps1" -azureEnv $selectedAzureEnv
 
-Write-Host "Configuring Stripe through the Payments API Function App" -ForegroundColor White
-
-# Prompt for the Stripe Webhook Secret
-Write-Host @"
-Locate the Stripe API Key in your Stripe account by:
-1. Logging into your Stripe account
-2. Navigating to the Developers-> API Keys section https://dashboard.stripe.com/test/apikeys
-3. Copy the 'Secret key' by clicking on it, and enter it below
-
-"@ -ForegroundColor Cyan
-$stripeApiKey = Read-Host -Prompt "Please enter the Stripe API Key (Right click to paste)"
-
-# Get the Function Key
-$functionKey = Get-StripeWebhookFunctionKey `
-    -ResourceGroupName $resourceGroupName `
-    -FunctionAppName $functionAppName `
-    -FunctionName $functionName
-# Construct the Full URL
-$functionUrl="$($functionAppUri.TrimEnd('/'))/api/stripe/webhook?code=$($functionKey)"
-
-Write-Host @"
-Register a new webhook endpoint in your Stripe account:
-
-You can do this by:
-1. Logging into your Stripe account
-2. Navigating to the Developers -> Webhooks section https://dashboard.stripe.com/test/workbench/webhooks
-4. Select '+ Add destination'
-5. Select Checkout -> Select all Checkout events.
-6. Select Continue -> Webhook endpoint -> Continue
-7. Entering the following URL in the 'Endpoint URL' field
-    $functionUrl
-8. Keep this URL private because it includes the Function key.
-9. Select on 'Create destination'
-10. Select Reveal next to the Signing secret.
-11. Copy the 'Signing secret' by selecting the clip board icon, and enter it below
-
-"@ -ForegroundColor Cyan
-
-# Prompt for the Stripe API Key
-$stripeWebhookSigningSecret = Read-Host -Prompt "Please enter the Webhook 'Signing secret' (Right click to paste)"
-
-$apiClientSecretGenerated = $false
 $apiClientSecret = az functionapp config appsettings list `
     --resource-group $resourceGroupName `
     --name $functionAppName `
@@ -416,7 +347,7 @@ try {
         -ApiAppId $apiAppId `
         -ApiClientAppId $apiClientAppId `
         -ApiClientSecret $apiClientSecret `
-        -RequiredRole 'CanConfigureStripe'
+        -RequiredRole 'CanValidatePaymentsConfiguration'
 }
 catch {
     if ($_.ErrorDetails.Message -notlike '*invalid_client*') {
@@ -425,7 +356,6 @@ catch {
 
     $apiClientSecret = New-PaymentsApiClientSecret `
         -ClientAppObjectId $apiClientObjectId
-    $apiClientSecretGenerated = $true
     Set-PaymentsApiClientSecretSetting `
         -ResourceGroupName $resourceGroupName `
         -FunctionAppName $functionAppName `
@@ -436,51 +366,51 @@ catch {
         -ApiAppId $apiAppId `
         -ApiClientAppId $apiClientAppId `
         -ApiClientSecret $apiClientSecret `
-        -RequiredRole 'CanConfigureStripe'
+        -RequiredRole 'CanValidatePaymentsConfiguration'
 }
 
 if ([string]::IsNullOrWhiteSpace($token)) {
-    throw "Could not acquire an application access token for api://$apiAppId. Ensure the client app has the CanConfigureStripe application role and admin consent."
-}
-
-$settings = @('STRIPE_CONFIGURATION_ENABLED=true')
-if ($apiClientSecretGenerated) {
-    $settings += "PAYMENTS_API_CLIENT_SECRET=$apiClientSecret"
+    throw "Could not acquire an application access token for api://$apiAppId. Ensure the client app has the CanValidatePaymentsConfiguration application role and admin consent."
 }
 
 try {
-    Write-Host "Waiting for the Function App to apply Stripe configuration settings" -ForegroundColor Yellow
+    Write-Host "Waiting for the Function App to apply configuration validation settings" -ForegroundColor Yellow
     az functionapp config appsettings set `
         --resource-group $resourceGroupName `
         --name $functionAppName `
-        --settings $settings `
+        --settings CONFIGURATION_VALIDATION_ENABLED=true `
         --output none
+
+    Wait-FunctionAppSetting `
+        -ResourceGroupName $resourceGroupName `
+        -FunctionAppName $functionAppName `
+        -Name 'CONFIGURATION_VALIDATION_ENABLED' `
+        -ExpectedValue 'true'
 
     Restart-FunctionAppAndWait `
         -ResourceGroupName $resourceGroupName `
         -FunctionAppName $functionAppName `
         -FunctionAppUri $functionAppUri
 
-    $configurationSetting = az functionapp config appsettings list `
-        --resource-group $resourceGroupName `
-        --name $functionAppName `
-        --query "[?name=='STRIPE_CONFIGURATION_ENABLED'].value | [0]" `
-        --output tsv
-    Write-Host "Function App setting STRIPE_CONFIGURATION_ENABLED=$configurationSetting" -ForegroundColor Yellow
+    $sqlValidationUri = "$($functionAppUri.TrimEnd('/'))/api/configuration/validate-sql"
+    $keyVaultValidationUri = "$($functionAppUri.TrimEnd('/'))/api/configuration/validate-key-vault"
 
-    Write-Host "Calling $functionAppUri/api/configuration/configure-stripe" -ForegroundColor Green
-    Invoke-StripeConfigurationWithRetry `
-        -Uri "$functionAppUri/api/configuration/configure-stripe" `
-        -Token $token `
-        -StripeApiKey $stripeApiKey `
-        -StripeWebhookSecret $stripeWebhookSigningSecret
+    Write-Host "Calling $sqlValidationUri" -ForegroundColor Green
+    $sqlValidation = Invoke-ValidationEndpointWithRetry -Uri $sqlValidationUri -Token $token
+    Write-Host "SQL validation result" -ForegroundColor Cyan
+    $sqlValidation | ConvertTo-Json -Depth 20
+
+    Write-Host "Calling $keyVaultValidationUri" -ForegroundColor Green
+    $keyVaultValidation = Invoke-ValidationEndpointWithRetry -Uri $keyVaultValidationUri -Token $token
+    Write-Host "Key Vault validation result" -ForegroundColor Cyan
+    $keyVaultValidation | ConvertTo-Json -Depth 20
 }
 finally {
-    Write-Host "Disabling the Stripe configuration endpoint" -ForegroundColor Yellow
+    Write-Host "Disabling the configuration validation endpoints" -ForegroundColor Yellow
     az functionapp config appsettings set `
         --resource-group $resourceGroupName `
         --name $functionAppName `
-        --settings STRIPE_CONFIGURATION_ENABLED=false `
+        --settings CONFIGURATION_VALIDATION_ENABLED=false `
         --output none
 
     Restart-FunctionAppAndWait `
@@ -489,4 +419,4 @@ finally {
         -FunctionAppUri $functionAppUri
 }
 
-Write-Host "Stripe configuration complete." -ForegroundColor Green
+Write-Host "Payments configuration validation complete." -ForegroundColor Green

@@ -76,10 +76,13 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
       FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
       WEBSITE_RUN_FROM_PACKAGE: '1'
       MICROSOFT_PROVIDER_AUTHENTICATION_SECRET: apiAppicationSecret
+      PAYMENTS_API_CLIENT_SECRET: apiAppicationSecret
       minimumElasticInstanceCount: 0
       httpsOnly: true
       WEBSITE_AUTH_AAD_ALLOWED_TENANTS: tenant().tenantId // This sets the 'Allow requests from specific tenants' setting on the authconfig added below
       SQL_INITIALIZATION_ENABLED: 'false'
+      STRIPE_CONFIGURATION_ENABLED: 'false'
+      CONFIGURATION_VALIDATION_ENABLED: 'false'
       SQL_MANAGED_IDENTITY_USER_NAME: name
       SQL_MANAGED_IDENTITY_OBJECT_ID: appService.identity.principalId
       
