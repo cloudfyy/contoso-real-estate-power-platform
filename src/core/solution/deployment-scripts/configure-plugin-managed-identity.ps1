@@ -17,7 +17,12 @@ $envVars = GetEnvironmentVariables -azureEnv $azureEnv
 $ManagedIdentityPrincipal = $envVars.ENTRA_API_CLIENT_APP_ID
 
 # Read the certificate thumbprint from the file src\core\plugins\payments-virtual-table-provider\ManagedIdentity\thumbprint.txt
-$thumbprintPath = Join-Path -Path $PSScriptRoot -ChildPath "/../../plugins/payments-virtual-table-provider/ManagedIdentity/thumbprint.txt"
+$thumbprintPath = Join-Path -Path $PSScriptRoot -ChildPath "../../plugins/payments-virtual-table-provider/ManagedIdentity/thumbprint.txt"
+
+if (-not (Test-Path -Path $thumbprintPath)) {
+    Write-Error "Certificate thumbprint file not found at '$thumbprintPath'. Build the PaymentVirtualTableProvider project or run the ManagedIdentity certificate generation script first."
+    exit 1
+}
 
 $thumbprint = Get-Content -Path $thumbprintPath
 
@@ -50,7 +55,36 @@ $environmentSegment2 = $environmenStrippedId.Substring($environmenStrippedId.Len
 
 Write-Host "Adding Federated Credentials for the API Client Application $ManagedIdentityPrincipal in the environment $environmentId..." -ForegroundColor Green
 # NOTE: The audience (including case) api://azureadtokenexchange might need to be updated to match the audience that Dataverse uses if that changes once GA
-az ad app federated-credential create --id $ManagedIdentityPrincipal --parameters "{'name': 'Dataverse-$environmenStrippedId','issuer': 'https://$environmentSegment1.$environmentSegment2.environment.api.powerplatform.com/sts','subject': 'component:pluginassembly,thumbprint:$thumbprint,environment:$environmentId','description': 'Federated credentials for the Payments Virtual Entity Provider plugin','audiences': ['api://azureadtokenexchange']}" >> $null
+$federatedCredentialName = "Dataverse-$environmenStrippedId"
+$federatedCredentials = az ad app federated-credential list --id $ManagedIdentityPrincipal -o json 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Unable to list federated credentials for application '$ManagedIdentityPrincipal'. $federatedCredentials"
+    exit 1
+}
+
+$existingFederatedCredential = $federatedCredentials |
+    ConvertFrom-Json |
+    Where-Object { $_.name -eq $federatedCredentialName } |
+    Select-Object -First 1
+
+if ($null -ne $existingFederatedCredential) {
+    Write-Host "Federated credential '$federatedCredentialName' already exists for application '$ManagedIdentityPrincipal'" -ForegroundColor Yellow
+}
+else {
+    $federatedCredentialParameters = @{
+        name = $federatedCredentialName
+        issuer = "https://$environmentSegment1.$environmentSegment2.environment.api.powerplatform.com/sts"
+        subject = "component:pluginassembly,thumbprint:$thumbprint,environment:$environmentId"
+        description = "Federated credentials for the Payments Virtual Entity Provider plugin"
+        audiences = @("api://azureadtokenexchange")
+    } | ConvertTo-Json -Compress
+
+    az ad app federated-credential create --id $ManagedIdentityPrincipal --parameters $federatedCredentialParameters >> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Unable to create federated credential '$federatedCredentialName' for application '$ManagedIdentityPrincipal'."
+        exit 1
+    }
+}
 
 # Update the Managed Identity record in the solution to point to the Application Id of the API Client or Managed Identity Object Id
 # The ManagedIdentity Id is the GUID of the Managed Identity record in the solution - this will always be the same

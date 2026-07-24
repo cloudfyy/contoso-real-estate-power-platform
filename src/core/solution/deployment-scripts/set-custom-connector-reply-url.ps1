@@ -28,7 +28,7 @@ function SetRedirectUrl {
     # Check if the $redirectUrl is already in the redirect URIs
     if ($currentRedirectUris -contains $redirectUrl) {
         Write-Host "The redirect URI '$redirectUrl' is already in the client application '$appId'" -ForegroundColor Yellow
-        exit
+        return
     }
 
     # Append the new redirect URI
