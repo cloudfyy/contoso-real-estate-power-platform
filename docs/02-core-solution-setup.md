@@ -25,7 +25,12 @@ To start contributing, you'll need to set up your developer environment. Here's 
 
 0. Build the `ContosoRealEstateCustomControls_managed.zip` dependency locally when you cannot download it from GitHub releases, for example because of company network or package registry policy.
 
+   The recommended version is Node.js 18 LTS with npm 9. Use Node.js 18 LTS for this PCF project because newer Node.js versions can fail with the current toolchain.
+
    ```powershell
+   node --version
+   npm --version
+
    cd <repo_root>/src/controls/image-grid-pcf
    npm ci
    npm run build
