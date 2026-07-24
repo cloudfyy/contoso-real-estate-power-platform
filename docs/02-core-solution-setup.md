@@ -23,6 +23,27 @@ Follow these steps to create a development environment:
 
 To start contributing, you'll need to set up your developer environment. Here's a step-by-step guide:
 
+0. Build the `ContosoRealEstateCustomControls_managed.zip` dependency locally when you cannot download it from GitHub releases, for example because of company network or package registry policy.
+
+   ```powershell
+   cd <repo_root>/src/controls/image-grid-pcf
+   npm ci
+   npm run build
+
+   cd <repo_root>/src/controls/solution/ContosoRealEstateCustomControls
+   dotnet restore ./ContosoRealEstateCustomControls.cdsproj
+   dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release
+
+   New-Item -ItemType Directory -Force <repo_root>/temp_releases | Out-Null
+   Copy-Item `
+      <repo_root>/src/controls/solution/ContosoRealEstateCustomControls/bin/Release/ContosoRealEstateCustomControls_managed.zip `
+      <repo_root>/temp_releases/ContosoRealEstateCustomControls_managed.zip `
+      -Force
+   ```
+
+   > [!NOTE]
+   > If your company requires a private npm registry, place the project-level `.npmrc` file in `<repo_root>/src/controls/image-grid-pcf/.npmrc`. Do not commit credentials or tokens.
+
 1. Deploy the Azure resources using the instructions in [01-azure-api-setup.md](01-azure-api-setup.md).
 
 > [!IMPORTANT]

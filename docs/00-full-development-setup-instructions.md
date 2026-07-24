@@ -527,6 +527,27 @@ To perform the post deployment:
 
 The Core development environment has the custom controls solution deployed as managed, and the Core solution deployed as unmanaged to enable it to be worked on.
 
+0. Build the `ContosoRealEstateCustomControls_managed.zip` dependency locally when you cannot download it from GitHub releases, for example because of company network or package registry policy.
+
+   ```powershell
+   cd <repo_root>/src/controls/image-grid-pcf
+   npm ci
+   npm run build
+
+   cd <repo_root>/src/controls/solution/ContosoRealEstateCustomControls
+   dotnet restore ./ContosoRealEstateCustomControls.cdsproj
+   dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release
+
+   New-Item -ItemType Directory -Force <repo_root>/temp_releases | Out-Null
+   Copy-Item `
+      <repo_root>/src/controls/solution/ContosoRealEstateCustomControls/bin/Release/ContosoRealEstateCustomControls_managed.zip `
+      <repo_root>/temp_releases/ContosoRealEstateCustomControls_managed.zip `
+      -Force
+   ```
+
+   > [!NOTE]
+   > If your company requires a private npm registry, place the project-level `.npmrc` file in `<repo_root>/src/controls/image-grid-pcf/.npmrc`. Do not commit credentials or tokens.
+
 1. Using the Power Platform Developer Tools in VSCode, select the environment you wish to deploy to. You can see which environment you currently have selected by using:
 
    ```powershell
@@ -535,7 +556,7 @@ The Core development environment has the custom controls solution deployed as ma
 
 1. Inside **VSCode**, drag the script located at `src\core\solution\deployment-scripts\1-deploy-to-development-environment.ps1` into the PowerShell terminal window, and press **Enter** to execute it
 
-1. Follow the instructions when running the script carefully. You will need to select the Azure environment that you deployed using azd up, then download the latest `ContosoRealEstateCustomControls_managed.zip` solution from [releases](https://github.com/microsoft/contoso-real-estate-power-platform/releases?q=ContosoRealEstateCustomControls&expanded=true) and save into the `temp_releases` folder using the path given.
+1. Follow the instructions when running the script carefully. You will need to select the Azure environment that you deployed using `azd up`. The script automatically downloads the latest `ContosoRealEstateCustomControls_managed.zip` solution from [releases](https://github.com/microsoft/contoso-real-estate-power-platform/releases?q=ContosoRealEstateCustomControls&expanded=true) unless the file already exists in the `temp_releases` folder.
 
 > [!NOTE]
 >

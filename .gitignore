@@ -49,3 +49,5 @@ temp-*
 temp_*
 temp_releases
 coverage
+.npmrc
+**/.npmrc
