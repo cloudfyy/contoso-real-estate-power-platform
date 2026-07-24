@@ -168,3 +168,78 @@ function CheckPACCLI {
     }
     Write-Progress -Activity "Checking access via Power Platform CLI..." -Completed
 }
+
+function GetGitHubRepositoryName {
+    param (
+        [string[]]$remoteNames = @('origin')
+    )
+
+    foreach ($remoteName in $remoteNames) {
+        $remoteUrl = git remote get-url $remoteName 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($remoteUrl)) {
+            continue
+        }
+
+        if ($remoteUrl -match 'github\.com[:/]([^/]+)/(.+?)(\.git)?$') {
+            $owner = $matches[1]
+            $repository = $matches[2] -replace '\.git$', ''
+            return "$owner/$repository"
+        }
+    }
+
+    Write-Host "Unable to determine GitHub repository from remotes: $($remoteNames -join ', ')" -ForegroundColor Red
+    exit 1
+}
+
+function GetGitHubRepositoryUrl {
+    param (
+        [string[]]$remoteNames = @('origin')
+    )
+
+    $repositoryName = GetGitHubRepositoryName -remoteNames $remoteNames
+    return "https://github.com/$repositoryName"
+}
+
+function SaveGitHubReleaseAsset {
+    param (
+        [string]$repositoryName,
+        [string]$assetName,
+        [string]$outputFolder
+    )
+
+    if (-not (Test-Path -Path $outputFolder)) {
+        New-Item -ItemType Directory -Path $outputFolder > $null
+    }
+
+    $outputPath = Join-Path -Path $outputFolder -ChildPath $assetName
+    if (Test-Path -Path $outputPath) {
+        Write-Host "Using existing release asset '$outputPath'" -ForegroundColor Green
+        return $outputPath
+    }
+
+    $releasesUrl = "https://api.github.com/repos/$repositoryName/releases?per_page=100"
+    $headers = @{ "User-Agent" = "contoso-real-estate-power-platform-setup" }
+
+    try {
+        Write-Host "Downloading '$assetName' from GitHub releases for '$repositoryName'..." -ForegroundColor Green
+        $releases = Invoke-RestMethod -Uri $releasesUrl -Headers $headers
+        $asset = $releases |
+            ForEach-Object { $_.assets } |
+            Where-Object { $_.name -eq $assetName } |
+            Select-Object -First 1
+
+        if ($null -eq $asset) {
+            throw "Release asset '$assetName' was not found in '$repositoryName'."
+        }
+
+        Invoke-WebRequest -Uri $asset.browser_download_url -Headers $headers -OutFile $outputPath
+        Write-Host "Downloaded '$assetName' to '$outputPath'" -ForegroundColor Green
+        return $outputPath
+    }
+    catch {
+        Write-Host "Unable to download '$assetName'." -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        Write-Host "Download it manually from https://github.com/$repositoryName/releases?q=$($assetName -replace '_managed.zip$', '')&expanded=true and place it in '$outputFolder'." -ForegroundColor Yellow
+        exit 1
+    }
+}

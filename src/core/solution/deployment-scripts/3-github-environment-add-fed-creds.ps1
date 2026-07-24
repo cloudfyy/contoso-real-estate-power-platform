@@ -23,8 +23,7 @@ $environmentDetails = pac env who --json | ConvertFrom-Json
 $environmentUrl = $environmentDetails.OrgUrl.TrimEnd('/')
 $spnName = "cre-github-workflows-$environmentName"
 Set-Location -Path $PSScriptRoot
-$remoteUrl = git remote get-url origin
-if ($remoteUrl -match "github\.com[:/](.+?)/(.+?)(\.git)?$") { $repoName = $matches[1] + "/" + $matches[2] }
+$repoName = GetGitHubRepositoryName -remoteNames @('origin')
 
 
 if (-not (ConfirmPrompt -message "Are you sure you want to create federated credentials for GitHub '$environmentName' in the repo '$repoName' for the environment '$environmentUrl' ?")) {

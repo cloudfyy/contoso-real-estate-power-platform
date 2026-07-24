@@ -9,49 +9,19 @@ Write-Host "This script will deploy the $solutionName solution to your developme
 
 # -----------------------------------------------------------------------
 # Import the environment variables
-$publicRepo = "https://github.com/microsoft/contoso-real-estate-power-platform/"
 $repoRoot =  Join-Path -Path $PSScriptRoot -ChildPath "/../../../../"
 # Resolve to an absolute path
 $repoRoot = (Get-Item -Path $repoRoot).FullName
 
 . "$repoRoot/src/core/solution/deployment-scripts/function-get-environment-variables.ps1"
+$releaseRepositoryName = GetGitHubRepositoryName -remoteNames @('upstream', 'origin')
 $envVars = GetEnvironmentVariables -azureEnv $azureEnv
 
 $sourceFolder = Join-Path -Path $PSScriptRoot -ChildPath "../$solutionName"
 $tempReleaseFolder = Join-Path -Path $repoRoot -ChildPath "/temp_releases"
 
-Write-Host @"
-Download the most recent `ContosoRealEstateCustomControls_managed.zip` solution into the folder '$tempReleaseFolder'. 
-$publicRepo/releases?q=ContosoRealEstateCustomControls&expanded=true
-
-Download the most recent `ContosoRealEstateCore_managed.zip` solution into the folder '$tempReleaseFolder'. 
-$publicRepo/releases?q=ContosoRealEstateCore&expanded=true
-
-"@ -ForegroundColor Yellow
-
-# Wait for any key to continue
-Write-Host "Press any key to continue..."
-$null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-
-# Check that the ContosoRealEstateCustomControls_managed.zip file exists
-if (-not (Test-Path -Path "$tempReleaseFolder/ContosoRealEstateCustomControls_managed.zip")) {
-    Write-Host "The ContosoRealEstateCustomControls_managed.zip file does not exist in the temp_releases folder." -ForegroundColor Red
-    Write-Host @"
-Download the most recent `ContosoRealEstateCustomControls_managed.zip` solution into the folder . 
-$publicRepo/releases?q=ContosoRealEstateCustomControls&expanded=true
-"@ -ForegroundColor Yellow
-    exit
-}
-
-# Check that the ContosoRealEstateCore_managed.zip file exists
-if (-not (Test-Path -Path "$tempReleaseFolder/ContosoRealEstateCore_managed.zip")) {
-    Write-Host "The ContosoRealEstateCore_managed.zip file does not exist in the temp_releases folder." -ForegroundColor Red
-    Write-Host @"
-Download the most recent `ContosoRealEstateCore_managed.zip` solution into the folder . 
-$publicRepo/releases?q=ContosoRealEstateCore&expanded=true
-"@ -ForegroundColor Yellow
-    exit
-}
+SaveGitHubReleaseAsset -repositoryName $releaseRepositoryName -assetName "ContosoRealEstateCustomControls_managed.zip" -outputFolder $tempReleaseFolder > $null
+SaveGitHubReleaseAsset -repositoryName $releaseRepositoryName -assetName "ContosoRealEstateCore_managed.zip" -outputFolder $tempReleaseFolder > $null
 
 Write-Host "Building solution at '$sourceFolder'" -ForegroundColor Green
 dotnet build -c Release "$sourceFolder"
