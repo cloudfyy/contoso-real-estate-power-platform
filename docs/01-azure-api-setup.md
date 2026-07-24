@@ -128,11 +128,11 @@ Here are the steps to deploy the Azure resources using `azd up`:
 
 Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyond the scope of this sample). To complete the deployment the following tasks must be carried out:
 
-- Initialize the SQL database for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and a protected initialization endpoint creates the database user, role membership, and payments table.
-- Add admin consent to the Payment API client Entra ID Application registration, so that it can be used as an SPN connection in Power Platform
-- Grant your user access to the Payment API so that it can be used as an OAuth user connection in Power Platform for testing.
+- The `postdeploy` hook writes the Payments API client secret to private Key Vault through the deployed Function App.
+- The `postdeploy` hook initializes the SQL database for Entra ID-only deployments. The Azure Functions run under a System Assigned Managed Identity (SAMI), and a protected initialization endpoint creates the database user, role membership, and payments table.
+- The manual post-deployment setup configures Stripe by calling the deployed Function App so the Stripe secrets are written from the private Key Vault network path, then validates SQL and Key Vault configuration through the deployed Function App.
 
-1. Ensure the Azure resources and Payments API Function App code have been deployed. `azd up --environment development` does both. If you only ran `azd provision`, run the following before the post-deployment setup:
+1. Ensure the Azure resources and Payments API Function App code have been deployed. `azd up --environment development` does this and also runs the `postdeploy` hook. If you only ran `azd provision`, run the following before the manual Stripe setup:
 
     ```powershell
     azd deploy payments-api --environment development
@@ -148,10 +148,10 @@ Some settings cannot be performed by Bicep/ARM scripts (or are complex and beyon
 1. Run the following and follow the instructions carefully:
 
     ```powershell
-    ./infra/scripts/post-deployment-setup.ps1
+    ./infra/scripts/configure-stripe-and-validate-payments.ps1
     ```
 
-    The `postdeploy` hook writes the Payments API client secret to private Key Vault through the deployed Function App. The post-deployment script initializes the SQL database from the Function App network path, grants Payment API access, and configures Stripe by calling the deployed Function App so the Stripe secrets are also written from the private Key Vault network path. The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. The script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/configuration/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After the script completes, the Function App keeps only its database-level permissions.
+    The SQL server has public network access disabled, so local SQL tools cannot initialize it directly. During `postdeploy`, the initialization script creates or reuses a temporary SQL admin group, adds the current user and Function App managed identity, sets that group as the SQL Entra administrator, temporarily enables `SQL_INITIALIZATION_ENABLED`, calls `POST /api/configuration/initialize-sql`, then disables the endpoint and removes the Function App identity from the admin group. After initialization completes, the Function App keeps only its database-level permissions. The Stripe configuration and validation script configures Stripe secrets and then validates the SQL tables, Stripe secrets, and Payments API client secret through the deployed Function App.
 
     If you only need to rerun the SQL initialization step, run:
 
