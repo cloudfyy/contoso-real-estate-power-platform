@@ -558,7 +558,7 @@ The Core development environment has the custom controls solution deployed as ma
    ```
 
    > [!NOTE]
-   > If your company requires a private npm registry, place the project-level `.npmrc` file in `<repo_root>/src/controls/image-grid-pcf/.npmrc`. Do not commit credentials or tokens.
+   > If your company requires a private npm registry, place the project-level `.npmrc` file in each npm project that is built locally: `<repo_root>/src/controls/image-grid-pcf/.npmrc` and `<repo_root>/src/core/mda-client-hooks/.npmrc`. Do not commit credentials or tokens.
 
 1. Using the Power Platform Developer Tools in VSCode, select the environment you wish to deploy to. You can see which environment you currently have selected by using:
 

@@ -7,7 +7,8 @@ Import-Module PKI
 $password = ConvertTo-SecureString -String "ContosoRealEsate" -Force -AsPlainText
 
 # Create a self-signed certificate
-$certificate = New-SelfSignedCertificate -Subject "CN=contoso.com, O=Contoso, C=US" -DnsName "contoso.com" -Type CodeSigning -KeyUsage DigitalSignature -CertStoreLocation Cert:\CurrentUser\My -FriendlyName "Contoso Real Estate Self Signed Cert"
+$certificate = New-SelfSignedCertificate -Subject "CN=contoso.com, O=Contoso, C=US" -DnsName "contoso.com" -Type CodeSigning -KeyUsage DigitalSignature -CertStoreLocation Cert:\CurrentUser\My -FriendlyName "Contoso Real Estate Self Signed Cert" -NotAfter (Get-Date).AddYears(5)
 
 # Export the certificate to PFX
-Export-PfxCertificate -Cert $certificate -FilePath "$PSScriptRoot/dev-certificate.pfx" -Password $password
+Export-PfxCertificate -Cert $certificate -FilePath "$PSScriptRoot/certificate.pfx" -Password $password
+$certificate.Thumbprint | Out-File -FilePath "$PSScriptRoot/thumbprint.txt"

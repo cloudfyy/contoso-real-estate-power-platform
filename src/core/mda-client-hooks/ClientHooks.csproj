@@ -12,7 +12,7 @@
 
   <Target Name="Build" AfterTargets="GetProjectOutputPath">
     <Exec Command="npm ci" Condition="'$(Configuration)' == 'Debug'"/>
-    <Exec Command="npm install" Condition="'$(Configuration)' == 'Release'"/>
+    <Exec Command="npm ci" Condition="'$(Configuration)' == 'Release'"/>
     <Exec Command="npm run build:dev " Condition="'$(Configuration)' == 'Debug'"/>
     <Exec Command="npm run build:prod" Condition="'$(Configuration)' == 'Release'"/>
   </Target>
