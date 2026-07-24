@@ -28,22 +28,29 @@ To start contributing, you'll need to set up your developer environment. Here's 
    The recommended version is Node.js 18 LTS with npm 9. Use Node.js 18 LTS for this PCF project because newer Node.js versions can fail with the current toolchain.
 
    ```powershell
+   Set-Location <repo_root>
+   $repoRoot = (Get-Location).Path
+
    node --version
    npm --version
 
-   cd <repo_root>/src/controls/image-grid-pcf
+   Set-Location (Join-Path $repoRoot "src/controls/image-grid-pcf")
    npm ci
    npm run build
 
-   cd <repo_root>/src/controls/solution/ContosoRealEstateCustomControls
+   # Build the Power Platform solution package. This creates the managed zip file.
+   Set-Location (Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls")
    dotnet restore ./ContosoRealEstateCustomControls.cdsproj
    dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release
 
-   New-Item -ItemType Directory -Force <repo_root>/temp_releases | Out-Null
-   Copy-Item `
-      <repo_root>/src/controls/solution/ContosoRealEstateCustomControls/bin/Release/ContosoRealEstateCustomControls_managed.zip `
-      <repo_root>/temp_releases/ContosoRealEstateCustomControls_managed.zip `
-      -Force
+   $tempReleaseFolder = Join-Path $repoRoot "temp_releases"
+   $managedSolutionZip = Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls/bin/ContosoRealEstateCustomControls_managed.zip"
+   if (-not (Test-Path $managedSolutionZip)) {
+      throw "The managed solution zip was not created: $managedSolutionZip"
+   }
+
+   New-Item -ItemType Directory -Force $tempReleaseFolder | Out-Null
+   Copy-Item $managedSolutionZip (Join-Path $tempReleaseFolder "ContosoRealEstateCustomControls_managed.zip") -Force
    ```
 
    > [!NOTE]
