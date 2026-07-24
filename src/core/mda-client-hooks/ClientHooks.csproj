@@ -4,15 +4,22 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <NodeModulesStamp>node_modules\.package-lock.stamp</NodeModulesStamp>
+  </PropertyGroup>
+
   <!-- Prevent Csc from being called -->
   <Target Name="CoreCompile" />
   <Target Name="GetProjectOutputPath"/>
   <Target Name="CopyFilesToOutputDirectory"/>
   
 
-  <Target Name="Build" AfterTargets="GetProjectOutputPath">
-    <Exec Command="npm ci" Condition="'$(Configuration)' == 'Debug'"/>
-    <Exec Command="npm ci" Condition="'$(Configuration)' == 'Release'"/>
+  <Target Name="RestoreNodeModules" Inputs="package.json;package-lock.json" Outputs="$(NodeModulesStamp)">
+    <Exec Command="npm ci" />
+    <Touch Files="$(NodeModulesStamp)" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="Build" DependsOnTargets="RestoreNodeModules" AfterTargets="GetProjectOutputPath" Inputs="src\**\*;webpack.config.js;tsconfig.json;package.json;package-lock.json;$(NodeModulesStamp)" Outputs="dist\ClientHooks.js">
     <Exec Command="npm run build:dev " Condition="'$(Configuration)' == 'Debug'"/>
     <Exec Command="npm run build:prod" Condition="'$(Configuration)' == 'Release'"/>
   </Target>
