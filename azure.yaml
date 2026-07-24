@@ -1,6 +1,15 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
 name: contoso-real-estate-api
+hooks:
+  postprovision:
+    shell: pwsh
+    run: ./hooks/postprovision.ps1
+    interactive: true
+  postdeploy:
+    shell: pwsh
+    run: ./hooks/postdeploy.ps1
+    interactive: true
 workflows:
   up: 
     steps:

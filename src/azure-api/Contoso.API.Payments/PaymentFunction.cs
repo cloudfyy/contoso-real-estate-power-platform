@@ -38,7 +38,8 @@ enum PaymentAppRoles
     CanInitializePaymentsDatabase,
     CanConfigureStripe,
     CanValidatePaymentsConfiguration,
-    CanReadPaymentsApiClientSecret
+    CanReadPaymentsApiClientSecret,
+    CanWritePaymentsApiClientSecret
 }
 public class PaymentFunction
 {
@@ -412,6 +413,58 @@ public class PaymentFunction
         {
             this._logger.LogError(ex, "getPaymentsApiClientSecret function: error occurred");
             return GetConfigurationErrorResult("Payments API client secret read failed.", ex);
+        }
+    }
+
+    [Function("setPaymentsApiClientSecret")]
+    [OpenApiOperation(operationId: "setPaymentsApiClientSecret", tags: new[] { "configuration" }, Summary = "Set Payments API client secret", Description = "Stores the Payments API client secret in Key Vault for deployment configuration")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(PaymentsApiClientSecretRequest), Required = true, Description = "Payments API client secret value")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "OK - Payments API client secret stored")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.BadRequest, Description = "Invalid request")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Secret write endpoint is disabled")]
+    [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.Unauthorized, Description = "Unauthorized")]
+    public async Task<IActionResult> SetPaymentsApiClientSecret(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "configuration/payments-api-client-secret")] HttpRequest req)
+    {
+        try
+        {
+            var secretWriteEnabledValue = _configuration["PAYMENTS_API_CLIENT_SECRET_WRITE_ENABLED"];
+            if (!bool.TryParse(secretWriteEnabledValue, out bool secretWriteEnabled) || !secretWriteEnabled)
+            {
+                this._logger.LogWarning("setPaymentsApiClientSecret endpoint is disabled. PAYMENTS_API_CLIENT_SECRET_WRITE_ENABLED value: '{SecretWriteEnabledValue}'", secretWriteEnabledValue ?? "<null>");
+                return new ContentResult
+                {
+                    StatusCode = (int)HttpStatusCode.NotFound,
+                    ContentType = "application/json",
+                    Content = JsonConvert.SerializeObject(new
+                    {
+                        message = "Payments API client secret write endpoint is disabled. Set PAYMENTS_API_CLIENT_SECRET_WRITE_ENABLED=true and restart the Function App before retrying.",
+                        paymentsApiClientSecretWriteEnabled = secretWriteEnabledValue
+                    })
+                };
+            }
+
+            GetAuthenticatedPrincipal(req).AssertUserInRoles(PaymentAppRoles.CanWritePaymentsApiClientSecret.ToString());
+
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            var secretRequest = JsonConvert.DeserializeObject<PaymentsApiClientSecretRequest>(requestBody);
+            if (secretRequest == null || string.IsNullOrWhiteSpace(secretRequest.Value))
+            {
+                return new BadRequestObjectResult(new { error = "Value is required." });
+            }
+
+            var secret = await SetPaymentsApiClientSecretInternal(secretRequest.Value);
+            return new OkObjectResult(secret);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogWarning(ex, $"setPaymentsApiClientSecret unauthorized access attempt. {ex.Message}");
+            return new UnauthorizedResult();
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "setPaymentsApiClientSecret function: error occurred");
+            return GetConfigurationErrorResult("Payments API client secret write failed.", ex);
         }
     }
 
@@ -821,6 +874,19 @@ ORDER BY ORDINAL_POSITION;";
         };
     }
 
+    internal async Task<object> SetPaymentsApiClientSecretInternal(string value)
+    {
+        var secretClient = CreateSecretClient();
+        var secretName = GetPaymentsApiClientSecretName();
+        KeyVaultSecret secret = await secretClient.SetSecretAsync(secretName, value);
+
+        return new
+        {
+            name = secretName,
+            updatedOn = secret.Properties.UpdatedOn
+        };
+    }
+
     private SecretClient CreateSecretClient()
     {
         var keyVaultEndpoint = _configuration["AZURE_KEY_VAULT_ENDPOINT"];
@@ -926,6 +992,11 @@ public class StripeConfigurationRequest
 {
     public string StripeApiKey { get; set; }
     public string StripeWebhookSecret { get; set; }
+}
+
+public class PaymentsApiClientSecretRequest
+{
+    public string Value { get; set; }
 }
 
 public enum PaymentStatus

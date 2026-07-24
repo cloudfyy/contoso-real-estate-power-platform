@@ -111,7 +111,7 @@ $appId = $envVars.ENTRA_API_APP_ID
 Write-Host "Granting access to the Payment API for the current user" -ForegroundColor Green
 $currentUserPrincipalId = az ad signed-in-user show --query id -o tsv 2>&1
 Assert-AzCliSucceeded -Output $currentUserPrincipalId -Operation "Reading current Azure CLI user"
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret" -principalId $currentUserPrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret,CanWritePaymentsApiClientSecret" -principalId $currentUserPrincipalId -appId $appId
 
 # The Client for Contoso Real Estate Payments API needs admin consent if it's used as a service principal to access the API
 Write-Host "Granting access to the Payment API for the SPN used in connections" -ForegroundColor Green
@@ -120,7 +120,7 @@ Assert-AzCliSucceeded -Output $clientServicePrincipalId -Operation "Reading Paym
 if ([string]::IsNullOrWhiteSpace($clientServicePrincipalId)) {
     throw "Could not find the service principal for Payments API client app '$($envVars.ENTRA_API_CLIENT_APP_ID)'. Run azd provision, then rerun this script."
 }
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret" -principalId $clientServicePrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret,CanWritePaymentsApiClientSecret" -principalId $clientServicePrincipalId -appId $appId
 $adminConsentResult = az ad app permission admin-consent --id $envVars.ENTRA_API_CLIENT_APP_ID 2>&1
 Assert-AzCliSucceeded -Output $adminConsentResult -Operation "Granting admin consent to the Payments API client app"
 

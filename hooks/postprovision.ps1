@@ -18,7 +18,6 @@ function Get-RequiredEnvironmentVariable {
 
 $clientAppObjectId = Get-RequiredEnvironmentVariable 'ENTRA_API_CLIENT_OBJECT_ID'
 $clientAppId = Get-RequiredEnvironmentVariable 'ENTRA_API_CLIENT_APP_ID'
-$secretName = Get-RequiredEnvironmentVariable 'AZURE_KEY_VAULT_ENTRA_API_SECRET_NAME'
 $resourceGroupName = Get-RequiredEnvironmentVariable 'AZURE_RESOURCE_GROUP'
 $functionAppName = Get-RequiredEnvironmentVariable 'SERVICE_API_NAME'
 
@@ -32,17 +31,30 @@ $body = @{
 } | ConvertTo-Json -Depth 4 -Compress
 
 Write-Host "Generating Entra client secret for application object '$clientAppObjectId'"
-$credential = az rest `
-	--method post `
-	--url "https://graph.microsoft.com/v1.0/applications/$clientAppObjectId/addPassword" `
-	--body $body `
-	--headers 'Content-Type=application/json' `
-	--output json | ConvertFrom-Json
+$bodyFile = New-TemporaryFile
+Set-Content -Path $bodyFile -Value $body -Encoding utf8
+
+try {
+	$credentialResult = az rest `
+		--method post `
+		--url "https://graph.microsoft.com/v1.0/applications/$clientAppObjectId/addPassword" `
+		--body "@$bodyFile" `
+		--headers 'Content-Type=application/json' `
+		--output json 2>&1
+
+	if ($LASTEXITCODE -ne 0) {
+		throw "Microsoft Graph addPassword request failed. $(($credentialResult | Out-String).Trim())"
+	}
+
+	$credential = $credentialResult | ConvertFrom-Json
+}
+finally {
+	Remove-Item -Path $bodyFile -Force
+}
 
 if ([string]::IsNullOrWhiteSpace($credential.secretText)) {
 	throw 'Microsoft Graph did not return a generated client secret.'
 }
-# TODO: Write the generated client secret to Key Vault secret '$secretName' through the Payments API because Key Vault public network access is disabled.
 
 Write-Host "Updating Function App authentication secret setting"
 az functionapp config appsettings set `
