@@ -277,31 +277,15 @@ function Test-SolutionPackage {
 
 function Invoke-DotNetBuild {
     param (
-        [string]$ProjectPath,
-        [int]$MaxAttempts = 5
+        [string]$ProjectPath
     )
 
     $arguments = @('build', '-c', 'Release', $ProjectPath)
-    $solutionFolder = Split-Path -Path $ProjectPath -Parent
 
-    Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
-
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        Write-Host "dotnet $($arguments -join ' ') (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
-        & dotnet @arguments
-        if ($LASTEXITCODE -eq 0) {
-            return
-        }
-
-        if ($attempt -ge $MaxAttempts) {
-            throw "Build failed for '$ProjectPath' after $MaxAttempts attempts."
-        }
-
-        Write-Host "Build failed for '$ProjectPath'. Cleaning transient solution packaging folders before retrying." -ForegroundColor Yellow
-        Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
-        $delaySeconds = Get-RetryDelaySeconds -Attempt $attempt
-        Write-Host "Retrying build after $delaySeconds seconds." -ForegroundColor Yellow
-        Start-Sleep -Seconds $delaySeconds
+    Write-Host "dotnet $($arguments -join ' ')" -ForegroundColor Cyan
+    & dotnet @arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build failed for '$ProjectPath'."
     }
 }
 
@@ -354,6 +338,60 @@ function Clear-SolutionPackageTransientFolders {
     }
 }
 
+function Get-HandleToolPath {
+    $repoRoot = Get-RepositoryRoot
+    $toolRoot = Join-Path -Path $repoRoot -ChildPath 'temp_tools\sysinternals'
+    $handlePath = Join-Path -Path $toolRoot -ChildPath 'handle64.exe'
+    if (Test-Path -Path $handlePath) {
+        return $handlePath
+    }
+
+    New-Item -ItemType Directory -Path $toolRoot -Force > $null
+    $zipPath = Join-Path -Path $toolRoot -ChildPath 'Handle.zip'
+
+    Write-Host "Downloading Sysinternals Handle to '$toolRoot'" -ForegroundColor Yellow
+    Invoke-WebRequest -Uri 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath $toolRoot -Force
+
+    if (-not (Test-Path -Path $handlePath)) {
+        throw "Sysinternals Handle was not found at '$handlePath' after download."
+    }
+
+    return $handlePath
+}
+
+function Invoke-SolutionPackageLockDiagnostics {
+    param (
+        [string]$SolutionFolder
+    )
+
+    try {
+        $handlePath = Get-HandleToolPath
+    }
+    catch {
+        Write-Host "Unable to prepare Sysinternals Handle for lock diagnostics. $($_.Exception.Message)" -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($folderName in @('Metadata', 'SolutionPackagerLogs', 'obj')) {
+        $path = Join-Path -Path $SolutionFolder -ChildPath $folderName
+        if (-not (Test-Path -Path $path)) {
+            continue
+        }
+
+        Write-Host "Checking file locks for '$path'" -ForegroundColor Yellow
+        $output = & $handlePath -accepteula -nobanner $path 2>&1
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($output | Out-String))) {
+            Write-Host "No open handles reported for '$path'." -ForegroundColor Yellow
+            continue
+        }
+
+        $output | Select-Object -First 80 | ForEach-Object {
+            Write-Host $_ -ForegroundColor Yellow
+        }
+    }
+}
+
 function Clear-SolutionBuildOutputs {
     param (
         [hashtable]$Definition,
@@ -377,10 +415,12 @@ function Invoke-SolutionBuild {
         [hashtable]$Definition,
         [string]$RepoRoot,
         [switch]$UseExistingPackages,
-        [switch]$VerifyOnly
+        [switch]$VerifyOnly,
+        [int]$MaxAttempts = 5
     )
 
     $projectPath = Join-Path -Path $RepoRoot -ChildPath $Definition.ProjectPath
+    $solutionFolder = Split-Path -Path $projectPath -Parent
     $solutionXmlPath = Join-Path -Path $RepoRoot -ChildPath $Definition.SolutionXmlPath
     $version = Get-SolutionVersion -SolutionXmlPath $solutionXmlPath
 
@@ -404,17 +444,38 @@ function Invoke-SolutionBuild {
         }
     }
 
-    if (-not $VerifyOnly) {
-        Invoke-DotNetBuild -ProjectPath $projectPath
-    }
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            if (-not $VerifyOnly) {
+                Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
+                Write-Host "Building $($Definition.Name) solution package (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
+                Invoke-DotNetBuild -ProjectPath $projectPath
+            }
 
-    foreach ($package in $Definition.Packages) {
-        $packagePath = Join-Path -Path $RepoRoot -ChildPath $package.Path
-        Test-SolutionPackage `
-            -PackagePath $packagePath `
-            -ExpectedUniqueName $Definition.UniqueName `
-            -ExpectedVersion $version `
-            -ExpectedManaged $package.Managed `
-            -RequiredEntries $Definition.RequiredEntries
+            foreach ($package in $Definition.Packages) {
+                $packagePath = Join-Path -Path $RepoRoot -ChildPath $package.Path
+                Test-SolutionPackage `
+                    -PackagePath $packagePath `
+                    -ExpectedUniqueName $Definition.UniqueName `
+                    -ExpectedVersion $version `
+                    -ExpectedManaged $package.Managed `
+                    -RequiredEntries $Definition.RequiredEntries
+            }
+
+            return
+        }
+        catch {
+            if ($VerifyOnly -or $attempt -ge $MaxAttempts) {
+                throw
+            }
+
+            Write-Host "Build attempt $attempt/$MaxAttempts failed for $($Definition.Name). $($_.Exception.Message)" -ForegroundColor Yellow
+            Invoke-SolutionPackageLockDiagnostics -SolutionFolder $solutionFolder
+            Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
+
+            $delaySeconds = Get-RetryDelaySeconds -Attempt $attempt
+            Write-Host "Retrying $($Definition.Name) solution package build after $delaySeconds seconds." -ForegroundColor Yellow
+            Start-Sleep -Seconds $delaySeconds
+        }
     }
 }
