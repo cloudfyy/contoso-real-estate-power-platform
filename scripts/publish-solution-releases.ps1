@@ -10,7 +10,8 @@ param (
     [switch]$Clean,
     [switch]$CleanNodeModules,
     [switch]$IsolatedWorkspace,
-    [switch]$CleanIsolatedCache,
+    [Alias('CleanIsolatedCache')]
+    [switch]$CleanIsolatedWorkspace,
     [switch]$SkipPush
 )
 
@@ -58,9 +59,9 @@ function Invoke-ExternalCommand {
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
 
-if ($CleanIsolatedCache -and -not $IsolatedWorkspace) {
-    Invoke-ExternalCommand -CommandDescription 'Clean isolated node_modules cache' -ScriptBlock {
-        & (Join-Path -Path $repoRoot -ChildPath 'scripts\build-release-packages.ps1') -CleanIsolatedCache
+if ($CleanIsolatedWorkspace -and -not $IsolatedWorkspace) {
+    Invoke-ExternalCommand -CommandDescription 'Clean isolated workspace' -ScriptBlock {
+        & (Join-Path -Path $repoRoot -ChildPath 'scripts\build-release-packages.ps1') -CleanIsolatedWorkspace
     }
     return
 }
@@ -128,8 +129,8 @@ if ($PSCmdlet.ShouldProcess($Repository, 'publish solution releases')) {
         if ($IsolatedWorkspace) {
             $buildArguments.IsolatedWorkspace = $true
         }
-        if ($CleanIsolatedCache) {
-            $buildArguments.CleanIsolatedCache = $true
+        if ($CleanIsolatedWorkspace) {
+            $buildArguments.CleanIsolatedWorkspace = $true
         }
 
         Invoke-ExternalCommand -CommandDescription 'Build release packages' -ScriptBlock {

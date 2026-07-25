@@ -351,6 +351,85 @@ function Get-LargestFreeFileSystemRoot {
     return $drive.Root
 }
 
+function Get-IsolatedWorkspaceRegistryKey {
+    return 'HKCU:\Software\ContosoRealEstate\BuildReleasePackages'
+}
+
+function Get-IsolatedWorkspaceRegistryValueName {
+    param (
+        [string]$RepoRoot
+    )
+
+    $normalizedRepoRoot = $RepoRoot.ToLowerInvariant()
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalizedRepoRoot)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash($bytes)
+    }
+    finally {
+        $sha256.Dispose()
+    }
+
+    $hashText = -join ($hashBytes | ForEach-Object { $_.ToString('x2') })
+    return "IsolatedWorkspace_$($hashText.Substring(0, 16))"
+}
+
+function Get-RegisteredIsolatedWorkspaceRoot {
+    param (
+        [string]$RepoRoot
+    )
+
+    $registryKey = Get-IsolatedWorkspaceRegistryKey
+    $valueName = Get-IsolatedWorkspaceRegistryValueName -RepoRoot $RepoRoot
+    $item = Get-ItemProperty -Path $registryKey -Name $valueName -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return $null
+    }
+
+    $workspacePath = [string]$item.$valueName
+    if ([string]::IsNullOrWhiteSpace($workspacePath)) {
+        return $null
+    }
+
+    return $workspacePath
+}
+
+function Set-RegisteredIsolatedWorkspaceRoot {
+    param (
+        [string]$RepoRoot,
+        [string]$WorkspaceRoot
+    )
+
+    $registryKey = Get-IsolatedWorkspaceRegistryKey
+    $valueName = Get-IsolatedWorkspaceRegistryValueName -RepoRoot $RepoRoot
+    New-Item -Path $registryKey -Force > $null
+    Set-ItemProperty -Path $registryKey -Name $valueName -Value $WorkspaceRoot
+}
+
+function Remove-RegisteredIsolatedWorkspaceRoot {
+    param (
+        [string]$RepoRoot
+    )
+
+    $registryKey = Get-IsolatedWorkspaceRegistryKey
+    $valueName = Get-IsolatedWorkspaceRegistryValueName -RepoRoot $RepoRoot
+    Remove-ItemProperty -Path $registryKey -Name $valueName -ErrorAction SilentlyContinue
+}
+
+function Get-DefaultIsolatedWorkspaceRoot {
+    param (
+        [string]$RepoRoot
+    )
+
+    $rootDrive = Get-LargestFreeFileSystemRoot
+    $repoName = Split-Path -Path $RepoRoot -Leaf
+    if ([string]::IsNullOrWhiteSpace($repoName)) {
+        $repoName = 'repository'
+    }
+
+    return Join-Path -Path $rootDrive -ChildPath "cre-build-$repoName"
+}
+
 function Get-IsolatedMarkerPath {
     param (
         [string]$Path
@@ -409,6 +488,50 @@ function Remove-IsolatedOwnedPath {
     Assert-IsolatedOwnedPath -Path $Path -Purpose $Purpose
     Write-Host "Removing $Purpose directory '$Path'" -ForegroundColor Yellow
     Remove-Item -Path $Path -Recurse -Force
+    return $true
+}
+
+function Get-OrCreateIsolatedWorkspaceRoot {
+    param (
+        [string]$RepoRoot
+    )
+
+    $registeredPath = Get-RegisteredIsolatedWorkspaceRoot -RepoRoot $RepoRoot
+    if (-not [string]::IsNullOrWhiteSpace($registeredPath)) {
+        if (Test-Path -Path $registeredPath) {
+            Assert-IsolatedOwnedPath -Path $registeredPath -Purpose 'isolated workspace'
+            return (Get-Item -Path $registeredPath).FullName
+        }
+
+        Write-Host "Registered isolated workspace '$registeredPath' was not found. Creating a new one." -ForegroundColor Yellow
+    }
+
+    $workspaceRoot = Get-DefaultIsolatedWorkspaceRoot -RepoRoot $RepoRoot
+    Initialize-IsolatedOwnedPath -Path $workspaceRoot -Purpose 'isolated workspace'
+    Set-RegisteredIsolatedWorkspaceRoot -RepoRoot $RepoRoot -WorkspaceRoot $workspaceRoot
+    return (Get-Item -Path $workspaceRoot).FullName
+}
+
+function Clear-RegisteredIsolatedWorkspace {
+    param (
+        [string]$RepoRoot
+    )
+
+    $registeredPath = Get-RegisteredIsolatedWorkspaceRoot -RepoRoot $RepoRoot
+    if ([string]::IsNullOrWhiteSpace($registeredPath)) {
+        Write-Host 'No registered isolated workspace was found for this repository.' -ForegroundColor Yellow
+        return $false
+    }
+
+    if (Test-Path -Path $registeredPath) {
+        Remove-IsolatedOwnedPath -Path $registeredPath -Purpose 'isolated workspace' > $null
+    }
+    else {
+        Write-Host "Registered isolated workspace '$registeredPath' was not found on disk." -ForegroundColor Yellow
+    }
+
+    Remove-RegisteredIsolatedWorkspaceRoot -RepoRoot $RepoRoot
+    Write-Host 'Cleared registered isolated workspace for this repository.' -ForegroundColor Green
     return $true
 }
 
@@ -476,64 +599,6 @@ function Copy-RepositoryToIsolatedWorkspace {
         -ExcludeDirectories $excludeDirectories `
         -ExcludeFiles $excludeFiles
     Set-IsolatedOwnedPathMarker -Path $DestinationRoot -Purpose 'isolated workspace'
-}
-
-function Get-NodeModuleCachePaths {
-    param (
-        [array]$Definitions
-    )
-
-    @($Definitions | ForEach-Object { $_.NodeModulePaths } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
-}
-
-function Restore-IsolatedNodeModuleCache {
-    param (
-        [array]$Definitions,
-        [string]$CacheRoot,
-        [string]$WorkspaceRoot
-    )
-
-    Assert-IsolatedOwnedPath -Path $CacheRoot -Purpose 'isolated node_modules cache'
-    foreach ($relativePath in (Get-NodeModuleCachePaths -Definitions $Definitions)) {
-        $cachePath = Join-Path -Path $CacheRoot -ChildPath $relativePath
-        $workspacePath = Join-Path -Path $WorkspaceRoot -ChildPath $relativePath
-        if (-not (Test-Path -Path $cachePath)) {
-            Write-Host "No isolated node_modules cache found for '$relativePath'." -ForegroundColor Yellow
-            continue
-        }
-
-        Write-Host "Syncing isolated node_modules cache from '$cachePath' to '$workspacePath'" -ForegroundColor Cyan
-        Invoke-RobocopyMirror -Source $cachePath -Destination $workspacePath
-    }
-}
-
-function Save-IsolatedNodeModuleCache {
-    param (
-        [array]$Definitions,
-        [string]$CacheRoot,
-        [string]$WorkspaceRoot
-    )
-
-    Initialize-IsolatedOwnedPath -Path $CacheRoot -Purpose 'isolated node_modules cache'
-    foreach ($relativePath in (Get-NodeModuleCachePaths -Definitions $Definitions)) {
-        $workspacePath = Join-Path -Path $WorkspaceRoot -ChildPath $relativePath
-        $cachePath = Join-Path -Path $CacheRoot -ChildPath $relativePath
-        if (-not (Test-Path -Path $workspacePath)) {
-            Write-Host "No node_modules folder was created for '$relativePath'. Skipping isolated cache update." -ForegroundColor Yellow
-            continue
-        }
-
-        Write-Host "Syncing isolated node_modules cache from '$workspacePath' to '$cachePath'" -ForegroundColor Cyan
-        Invoke-RobocopyMirror -Source $workspacePath -Destination $cachePath
-    }
-}
-
-function Clear-IsolatedNodeModuleCache {
-    param (
-        [string]$CacheRoot
-    )
-
-    Remove-IsolatedOwnedPath -Path $CacheRoot -Purpose 'isolated node_modules cache' > $null
 }
 
 function Copy-SolutionPackagesToRepository {

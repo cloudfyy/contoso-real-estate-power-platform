@@ -8,7 +8,8 @@ param (
     [switch]$Clean,
     [switch]$CleanNodeModules,
     [switch]$IsolatedWorkspace,
-    [switch]$CleanIsolatedCache
+    [Alias('CleanIsolatedCache')]
+    [switch]$CleanIsolatedWorkspace
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,13 +31,9 @@ if ($Clean -and $UseExistingPackages) {
 $selectedDefinitions = @(Resolve-SolutionPackageDefinitions -Solution $Solution)
 $buildRepoRoot = $repoRoot
 $isolatedWorkspaceRoot = $null
-$isolatedCacheRoot = $null
-$isolatedRootDrive = Get-LargestFreeFileSystemRoot
-$isolatedCacheRoot = Join-Path -Path $isolatedRootDrive -ChildPath 'cre-build-cache'
 
-if ($CleanIsolatedCache) {
-    Write-Host "Isolated node_modules cache root: $isolatedCacheRoot" -ForegroundColor Cyan
-    Clear-IsolatedNodeModuleCache -CacheRoot $isolatedCacheRoot
+if ($CleanIsolatedWorkspace) {
+    Clear-RegisteredIsolatedWorkspace -RepoRoot $repoRoot > $null
     if (-not $IsolatedWorkspace) {
         return
     }
@@ -47,54 +44,44 @@ if ($IsolatedWorkspace) {
         throw 'Do not combine -IsolatedWorkspace with -UseExistingPackages or -VerifyOnly.'
     }
 
-    $isolatedWorkspaceRoot = Join-Path -Path $isolatedRootDrive -ChildPath "cre-build-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $isolatedWorkspaceRoot = Get-OrCreateIsolatedWorkspaceRoot -RepoRoot $repoRoot
     Write-Host "Isolated workspace root: $isolatedWorkspaceRoot" -ForegroundColor Cyan
-    Write-Host "Isolated node_modules cache root: $isolatedCacheRoot" -ForegroundColor Cyan
 
     Copy-RepositoryToIsolatedWorkspace -SourceRoot $repoRoot -DestinationRoot $isolatedWorkspaceRoot
-    Restore-IsolatedNodeModuleCache -Definitions $selectedDefinitions -CacheRoot $isolatedCacheRoot -WorkspaceRoot $isolatedWorkspaceRoot
     $buildRepoRoot = $isolatedWorkspaceRoot
 }
 
 $solutionTimings = @()
 $totalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-try {
-    foreach ($definition in $selectedDefinitions) {
-        Write-Host "`n== $($definition.Name) ==" -ForegroundColor White
-        $solutionStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-        try {
-            if ($Clean -or $CleanNodeModules) {
-                Clear-SolutionBuildOutputs `
-                    -Definition $definition `
-                    -RepoRoot $buildRepoRoot `
-                    -IncludeNodeModules:$CleanNodeModules
-            }
-
-            Invoke-SolutionBuild `
+foreach ($definition in $selectedDefinitions) {
+    Write-Host "`n== $($definition.Name) ==" -ForegroundColor White
+    $solutionStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        if ($Clean -or $CleanNodeModules) {
+            Clear-SolutionBuildOutputs `
                 -Definition $definition `
                 -RepoRoot $buildRepoRoot `
-                -UseExistingPackages:$UseExistingPackages `
-                -VerifyOnly:$VerifyOnly
+                -IncludeNodeModules:$CleanNodeModules
         }
-        finally {
-            $solutionStopwatch.Stop()
-            $solutionTimings += [PSCustomObject]@{
-                Solution = $definition.Name
-                Seconds = [math]::Round($solutionStopwatch.Elapsed.TotalSeconds, 2)
-            }
-        }
-    }
 
-    if ($IsolatedWorkspace) {
-        Save-IsolatedNodeModuleCache -Definitions $selectedDefinitions -CacheRoot $isolatedCacheRoot -WorkspaceRoot $buildRepoRoot
-        Copy-SolutionPackagesToRepository -Definitions $selectedDefinitions -SourceRoot $buildRepoRoot -DestinationRoot $repoRoot
+        Invoke-SolutionBuild `
+            -Definition $definition `
+            -RepoRoot $buildRepoRoot `
+            -UseExistingPackages:$UseExistingPackages `
+            -VerifyOnly:$VerifyOnly
+    }
+    finally {
+        $solutionStopwatch.Stop()
+        $solutionTimings += [PSCustomObject]@{
+            Solution = $definition.Name
+            Seconds = [math]::Round($solutionStopwatch.Elapsed.TotalSeconds, 2)
+        }
     }
 }
-finally {
-    if ($IsolatedWorkspace -and -not [string]::IsNullOrWhiteSpace($isolatedWorkspaceRoot) -and (Test-Path -Path $isolatedWorkspaceRoot)) {
-        Remove-IsolatedOwnedPath -Path $isolatedWorkspaceRoot -Purpose 'isolated workspace' > $null
-    }
+
+if ($IsolatedWorkspace) {
+    Copy-SolutionPackagesToRepository -Definitions $selectedDefinitions -SourceRoot $buildRepoRoot -DestinationRoot $repoRoot
 }
 
 $totalStopwatch.Stop()
