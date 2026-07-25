@@ -299,8 +299,20 @@ function Invoke-DotNetBuild {
 
         Write-Host "Build failed for '$ProjectPath'. Cleaning transient solution packaging folders before retrying." -ForegroundColor Yellow
         Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
-        Start-Sleep -Seconds 3
+        $delaySeconds = Get-RetryDelaySeconds -Attempt $attempt
+        Write-Host "Retrying build after $delaySeconds seconds." -ForegroundColor Yellow
+        Start-Sleep -Seconds $delaySeconds
     }
+}
+
+function Get-RetryDelaySeconds {
+    param (
+        [int]$Attempt,
+        [int]$InitialDelaySeconds = 2,
+        [int]$MaxDelaySeconds = 16
+    )
+
+    return [Math]::Min($MaxDelaySeconds, $InitialDelaySeconds * [Math]::Pow(2, [Math]::Max(0, $Attempt - 1)))
 }
 
 function Remove-PathIfExists {
@@ -325,8 +337,9 @@ function Remove-PathIfExists {
                 return
             }
 
-            Write-Host "Unable to remove '$Path'. Retrying after a short delay. $($_.Exception.Message)" -ForegroundColor Yellow
-            Start-Sleep -Seconds 3
+            $delaySeconds = Get-RetryDelaySeconds -Attempt $attempt
+            Write-Host "Unable to remove '$Path'. Retrying after $delaySeconds seconds. $($_.Exception.Message)" -ForegroundColor Yellow
+            Start-Sleep -Seconds $delaySeconds
         }
     }
 }
