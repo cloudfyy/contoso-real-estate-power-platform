@@ -4,6 +4,19 @@ param (
     [string]$azureEnv
 )
 
+function Assert-NativeCommandSucceeded {
+    param (
+        [string]$Operation
+    )
+
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+
+    Write-Host "$Operation failed. Stopping deployment." -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
 $solutionName = "ContosoRealEstateCore"
 Write-Host "This script will deploy the $solutionName solution to your development environment." -ForegroundColor White
 
@@ -30,18 +43,26 @@ $dependencies = @(
     }
 )
 
-InitializeSolutionDependencyAssets `
+$solutionPackageSource = InitializeSolutionDependencyAssets `
     -repositoryName $releaseRepositoryName `
     -outputFolder $tempReleaseFolder `
     -repoRoot $repoRoot `
     -dependencies $dependencies
 
-Write-Host "Building solution at '$sourceFolder'" -ForegroundColor Green
-dotnet build -c Release "$sourceFolder"
-if ($? -eq $false) {
-    throw $_.Exception
-    exit 1
+if ($solutionPackageSource -eq 'GitHubRelease') {
+    SaveGitHubReleaseAsset `
+        -repositoryName $releaseRepositoryName `
+        -assetName "ContosoRealEstateCore.zip" `
+        -outputFolder $tempReleaseFolder > $null
+    $solutionPackagePath = Join-Path -Path $tempReleaseFolder -ChildPath "ContosoRealEstateCore.zip"
 }
+else {
+    InvokeSolutionPackageBuild -solutionFolder $sourceFolder
+    $solutionPackagePath = Join-Path -Path $sourceFolder -ChildPath "bin/$solutionName.zip"
+}
+
+$solutionPackageInfo = GetSolutionPackageInfo -packagePath $solutionPackagePath
+Write-Host "Current solution package version: $($solutionPackageInfo.UniqueName) $($solutionPackageInfo.Version)" -ForegroundColor Cyan
 
 # Create core deployment settings file
 Write-Host "Creating deployment settings for " -ForegroundColor Green
@@ -61,30 +82,28 @@ if (-not (ConfirmPrompt -message "Are you sure you want to deploy to the environ
 
 # Enable PCF controls in Canvas Apps
 pac env update-settings --name "iscustomcontrolsincanvasappsenabled" --value true
+Assert-NativeCommandSucceeded -Operation "Enabling PCF controls in Canvas Apps"
 
 # Enable JavaScript attachments for the portal
 pac env update-settings --name "blockedattachments" --value "ade;adp;app;asa;ashx;asmx;asp;bas;bat;cdx;cer;chm;class;cmd;com;config;cpl;crt;csh;dll;exe;fxp;hlp;hta;htr;htw;ida;idc;idq;inf;ins;isp;its;jar;jse;ksh;lnk;mad;maf;mag;mam;maq;mar;mas;mat;mau;mav;maw;mda;mdb;mde;mdt;mdw;mdz;msc;msh;msh1;msh1xml;msh2;msh2xml;mshxml;msi;msp;mst;ops;pcd;pif;prf;prg;printer;pst;reg;rem;scf;scr;sct;shb;shs;shtm;shtml;soap;stm;tmp;url;vb;vbe;vbs;vsmacros;vss;vst;vsw;ws;wsc;wsf;wsh"
+Assert-NativeCommandSucceeded -Operation "Enabling JavaScript attachments for the portal"
 
 
 # Deploy the dependencies
 Write-Host "Deploying 'ContosoRealEstateCustomControls_managed.zip' to '$environmentName'" -ForegroundColor Green
 pac solution import -p "$tempReleaseFolder/ContosoRealEstateCustomControls_managed.zip" -a
-if ($? -eq $false) {
-    throw $_.Exception
-    exit 1
-}
+Assert-NativeCommandSucceeded -Operation "Importing solution dependency 'ContosoRealEstateCustomControls_managed.zip'"
 
 # Deploy the development unmanaged solution
 Write-Host "Deploying solution '$solutionName' to '$environmentName'" -ForegroundColor Green
-pac solution import -p "$sourceFolder/bin/$solutionName.zip" -a -ap -pc --settings-file "$repoRoot/src/core/solution/deployment-scripts/temp_deploymentSettings_$azureEnv.json" 
-if ($? -eq $false) {
-    throw $_.Exception
-    exit 1
-}
+pac solution import -p $solutionPackagePath -a -ap -pc --settings-file "$repoRoot/src/core/solution/deployment-scripts/temp_deploymentSettings_$azureEnv.json"
+Assert-NativeCommandSucceeded -Operation "Importing solution '$solutionName'"
 
 # Import test data
 Write-Host "Importing test data" -ForegroundColor Green
 pac data import -d "$repoRoot/src/core/data/reference-data.zip"
+Assert-NativeCommandSucceeded -Operation "Importing reference data"
 pac data import -d "$repoRoot/src/core/data/sample-data.zip"
+Assert-NativeCommandSucceeded -Operation "Importing sample data"
 
 Write-Host "Complete" -ForegroundColor Green

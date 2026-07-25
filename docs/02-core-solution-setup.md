@@ -72,7 +72,7 @@ To start contributing, you'll need to set up your developer environment. Here's 
 
    1. Select **Install**.
 
-1. Follow the instructions when running the script [1-deploy-to-development-environment.ps1](/src/core/solution/deployment-scripts/1-deploy-to-development-environment.ps1). The script asks whether to download dependency packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing `ContosoRealEstateCustomControls_managed.zip`. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed zip into `temp_releases`.
+1. Follow the instructions when running the script [1-deploy-to-development-environment.ps1](/src/core/solution/deployment-scripts/1-deploy-to-development-environment.ps1). The script asks whether to download solution packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing packages. If you choose GitHub releases, it downloads `ContosoRealEstateCustomControls_managed.zip` and `ContosoRealEstateCore.zip`, then skips local solution build. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed dependency zip into `temp_releases` and deploys the locally built Core solution.
 
 ### Manually building and deploying the solution
 
@@ -82,6 +82,8 @@ To start contributing, you'll need to set up your developer environment. Here's 
    cd <repo_root>
    ./scripts/build-release-packages.ps1 -Solution Core
    ```
+
+   If the build fails with `MSB3231: Unable to remove directory "obj\Release\Metadata"`, see [Solution Build File Lock Troubleshooting](08-solution-build-file-lock-troubleshooting.md).
 
 **IMPORTANT:** Unless you use the Release mode to build, you will see an error during import:
 

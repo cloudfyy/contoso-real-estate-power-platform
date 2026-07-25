@@ -121,17 +121,18 @@ function ConfirmPrompt {
         [string]$message
     )
 
-    Write-Host @"
+    while ($true) {
+        Write-Host @"
 $message (Y/N)
 "@ -ForegroundColor Yellow
 
-    $confirm = Read-Host
-
-    if ($confirm.ToUpper() -ne 'Y') {
-        return $false
+        $confirm = Read-Host
+        switch ($confirm.Trim().ToUpperInvariant()) {
+            'Y' { return $true }
+            'N' { return $false }
+            default { Write-Host "Please enter Y or N." -ForegroundColor Yellow }
+        }
     }
-
-    return $true
 }
 
 function CheckAZCLI {
@@ -284,7 +285,7 @@ function GetSolutionPackageInfo {
 
 function ReadSolutionDependencySource {
     Write-Host @"
-Choose the source for dependency solution packages:
+Choose the source for solution packages:
 [G] Download from GitHub releases in your origin repository
 [B] Build from local source. This can take up to 20 minutes.
 "@ -ForegroundColor Yellow
@@ -315,6 +316,57 @@ function ClearSolutionDependencyFolder {
     }
 
     New-Item -ItemType Directory -Path $outputFolder > $null
+}
+
+function RemovePathIfExists {
+    param (
+        [string]$path
+    )
+
+    if (Test-Path -Path $path) {
+        Write-Host "Removing '$path'" -ForegroundColor Yellow
+        try {
+            Remove-Item -Path $path -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Host "Unable to fully remove '$path'. Continuing. $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+}
+
+function ClearSolutionPackageTransientFolders {
+    param (
+        [string]$solutionFolder
+    )
+
+    @('Metadata', 'SolutionPackager', 'SolutionPackagerLogs', 'obj') | ForEach-Object {
+        RemovePathIfExists -path (Join-Path -Path $solutionFolder -ChildPath $_)
+    }
+}
+
+function InvokeSolutionPackageBuild {
+    param (
+        [string]$solutionFolder,
+        [int]$maxAttempts = 5
+    )
+
+    ClearSolutionPackageTransientFolders -solutionFolder $solutionFolder
+
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        Write-Host "Building solution at '$solutionFolder' (attempt $attempt/$maxAttempts)" -ForegroundColor Green
+        dotnet build -c Release "$solutionFolder"
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        if ($attempt -ge $maxAttempts) {
+            throw "Build failed for '$solutionFolder' after $maxAttempts attempts."
+        }
+
+        Write-Host "Build failed for '$solutionFolder'. Cleaning transient solution packaging folders before retrying." -ForegroundColor Yellow
+        ClearSolutionPackageTransientFolders -solutionFolder $solutionFolder
+        Start-Sleep -Seconds 3
+    }
 }
 
 function InitializeSolutionDependencyAssets {
@@ -361,4 +413,6 @@ function InitializeSolutionDependencyAssets {
         $packageInfo = GetSolutionPackageInfo -packagePath $packagePath
         Write-Host "  $($dependency.AssetName): $($packageInfo.UniqueName) $($packageInfo.Version)" -ForegroundColor Cyan
     }
+
+    return $source
 }

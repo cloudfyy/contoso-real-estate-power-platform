@@ -33,18 +33,26 @@ $dependencies = @(
     }
 )
 
-InitializeSolutionDependencyAssets `
+$solutionPackageSource = InitializeSolutionDependencyAssets `
     -repositoryName $releaseRepositoryName `
     -outputFolder $tempReleaseFolder `
     -repoRoot $repoRoot `
     -dependencies $dependencies
 
-Write-Host "Building solution at '$sourceFolder'" -ForegroundColor Green
-dotnet build -c Release "$sourceFolder"
-if ($? -eq $false) {
-    throw $_.Exception
-    exit 1
+if ($solutionPackageSource -eq 'GitHubRelease') {
+    SaveGitHubReleaseAsset `
+        -repositoryName $releaseRepositoryName `
+        -assetName "ContosoRealEstatePortal.zip" `
+        -outputFolder $tempReleaseFolder > $null
+    $solutionPackagePath = Join-Path -Path $tempReleaseFolder -ChildPath "ContosoRealEstatePortal.zip"
 }
+else {
+    InvokeSolutionPackageBuild -solutionFolder $sourceFolder
+    $solutionPackagePath = Join-Path -Path $sourceFolder -ChildPath "bin/$solutionName.zip"
+}
+
+$solutionPackageInfo = GetSolutionPackageInfo -packagePath $solutionPackagePath
+Write-Host "Current solution package version: $($solutionPackageInfo.UniqueName) $($solutionPackageInfo.Version)" -ForegroundColor Cyan
 
 # Create core deployment settings file
 . "$repoRoot/src/core/solution/deployment-scripts/generate-deployment-settings.ps1" -azureEnv $azureEnv
@@ -85,7 +93,7 @@ if ($? -eq $false) {
 
 # Deploy the development unmanaged solution
 Write-Host "Deploying solution '$solutionName' to '$environmentName'" -ForegroundColor Green
-pac solution import -p "$sourceFolder/bin/$solutionName.zip" -a -ap -pc
+pac solution import -p $solutionPackagePath -a -ap -pc
 if ($? -eq $false) {
     throw $_.Exception
     exit 1

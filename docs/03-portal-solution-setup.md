@@ -80,7 +80,7 @@ To start contributing, you'll need to set up your developer environment.
 
 1. Ensure you have all the updates installed via the Dynamics 365 apps page in the [admin portal](https://admin.powerplatform.microsoft.com/)
 
-1. Run the script at `src\portal\solution\deployment-scripts\deploy-to-development-environment.ps1` and follow the instructions carefully. The script asks whether to download dependency packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing `ContosoRealEstateCustomControls_managed.zip` and `ContosoRealEstateCore_managed.zip`. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed zips into `temp_releases`.
+1. Run the script at `src\portal\solution\deployment-scripts\deploy-to-development-environment.ps1` and follow the instructions carefully. The script asks whether to download solution packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing packages. If you choose GitHub releases, it downloads `ContosoRealEstateCustomControls_managed.zip`, `ContosoRealEstateCore_managed.zip`, and `ContosoRealEstatePortal.zip`, then skips local solution build. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed dependency zips into `temp_releases` and deploys the locally built Portal solution.
 
 ### Building the solution without the deployment script
 
@@ -90,6 +90,8 @@ To start contributing, you'll need to set up your developer environment.
    cd <repo_root>
    ./scripts/build-release-packages.ps1 -Solution Portal
    ```
+
+   If the build fails with `MSB3231: Unable to remove directory "obj\Release\Metadata"`, see [Solution Build File Lock Troubleshooting](08-solution-build-file-lock-troubleshooting.md).
 
 1. Import the newly built `ContosoRealEstatePortal.zip` found at `<repo_root>/src/portal/solution/ContosoRealEstatePortal/bin`
    **IMPORTANT:** You must install the **unmanaged** version of the solution.

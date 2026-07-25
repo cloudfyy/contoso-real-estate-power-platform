@@ -139,41 +139,6 @@ function Get-PaymentsApiAccessTokenWithRole {
     throw "Could not acquire an access token containing audience '$expectedAudience' and role '$RequiredRole'. Check the app role assignment and admin consent for client app '$ApiClientAppId'."
 }
 
-function New-PaymentsApiClientSecret {
-    param (
-        [string]$ClientAppObjectId
-    )
-
-    $body = @{
-        passwordCredential = @{
-            displayName = 'Client Secret for Stripe configuration'
-            endDateTime = (Get-Date).ToUniversalTime().AddDays(60).ToString('yyyy-MM-ddTHH:mm:ssZ')
-        }
-    } | ConvertTo-Json -Depth 4 -Compress
-
-    Write-Host "Generating a new Payments API client secret" -ForegroundColor Yellow
-    $bodyFile = New-TemporaryFile
-    Set-Content -Path $bodyFile -Value $body -Encoding utf8
-
-    try {
-        $credential = az rest `
-            --method post `
-            --url "https://graph.microsoft.com/v1.0/applications/$ClientAppObjectId/addPassword" `
-            --body "@$bodyFile" `
-            --headers 'Content-Type=application/json' `
-            --output json | ConvertFrom-Json
-    }
-    finally {
-        Remove-Item -Path $bodyFile -Force
-    }
-
-    if ([string]::IsNullOrWhiteSpace($credential.secretText)) {
-        throw 'Microsoft Graph did not return a generated client secret.'
-    }
-
-    return $credential.secretText
-}
-
 function Restart-FunctionAppAndWait {
     param (
         [string]$ResourceGroupName,
@@ -232,28 +197,6 @@ function Wait-FunctionAppSetting {
     }
 
     throw "Function App setting '$Name' did not become the expected value."
-}
-
-function Set-PaymentsApiClientSecretSetting {
-    param (
-        [string]$ResourceGroupName,
-        [string]$FunctionAppName,
-        [string]$ApiClientSecret
-    )
-
-    Write-Host "Saving the new Payments API client secret to Function App settings" -ForegroundColor Yellow
-    az functionapp config appsettings set `
-        --resource-group $ResourceGroupName `
-        --name $FunctionAppName `
-        --settings "PAYMENTS_API_CLIENT_SECRET=$ApiClientSecret" `
-        --output none
-
-    Wait-FunctionAppSetting `
-        -ResourceGroupName $ResourceGroupName `
-        -FunctionAppName $FunctionAppName `
-        -Name 'PAYMENTS_API_CLIENT_SECRET' `
-        -ExpectedValue $ApiClientSecret `
-        -RedactValue
 }
 
 function Get-StripeWebhookFunctionKey {
@@ -390,7 +333,6 @@ You can do this by:
 # Prompt for the Stripe API Key
 $stripeWebhookSigningSecret = Read-Host -Prompt "Please enter the Webhook 'Signing secret' (Right click to paste)"
 
-$apiClientSecretGenerated = $false
 $apiClientSecret = az functionapp config appsettings list `
     --resource-group $resourceGroupName `
     --name $functionAppName `
@@ -398,16 +340,7 @@ $apiClientSecret = az functionapp config appsettings list `
     --output tsv
 
 if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
-    Write-Host "PAYMENTS_API_CLIENT_SECRET is not set. Falling back to MICROSOFT_PROVIDER_AUTHENTICATION_SECRET for this run." -ForegroundColor Yellow
-    $apiClientSecret = az functionapp config appsettings list `
-        --resource-group $resourceGroupName `
-        --name $functionAppName `
-        --query "[?name=='MICROSOFT_PROVIDER_AUTHENTICATION_SECRET'].value | [0]" `
-        --output tsv
-}
-
-if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
-    throw "Could not read the Payments API client secret from Function App '$functionAppName'. Run azd provision to generate and apply the client secret."
+    throw "Could not read PAYMENTS_API_CLIENT_SECRET from Function App '$functionAppName'. Run azd provision, or run infra/scripts/repair-payments-api-easyauth-secret.ps1 if the configured client secret is invalid."
 }
 
 try {
@@ -423,20 +356,7 @@ catch {
         throw
     }
 
-    $apiClientSecret = New-PaymentsApiClientSecret `
-        -ClientAppObjectId $apiClientObjectId
-    $apiClientSecretGenerated = $true
-    Set-PaymentsApiClientSecretSetting `
-        -ResourceGroupName $resourceGroupName `
-        -FunctionAppName $functionAppName `
-        -ApiClientSecret $apiClientSecret
-
-    $token = Get-PaymentsApiAccessTokenWithRole `
-        -TenantId $tenantId `
-        -ApiAppId $apiAppId `
-        -ApiClientAppId $apiClientAppId `
-        -ApiClientSecret $apiClientSecret `
-        -RequiredRole 'CanConfigureStripe'
+    throw "The configured PAYMENTS_API_CLIENT_SECRET is invalid. Run infra/scripts/repair-payments-api-easyauth-secret.ps1 to repair the client secret, then rerun this script."
 }
 
 if ([string]::IsNullOrWhiteSpace($token)) {
@@ -444,9 +364,6 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 }
 
 $settings = @('STRIPE_CONFIGURATION_ENABLED=true')
-if ($apiClientSecretGenerated) {
-    $settings += "PAYMENTS_API_CLIENT_SECRET=$apiClientSecret"
-}
 
 try {
     Write-Host "Waiting for the Function App to apply Stripe configuration settings" -ForegroundColor Yellow

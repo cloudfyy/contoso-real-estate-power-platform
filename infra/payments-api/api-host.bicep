@@ -142,7 +142,7 @@ resource authSettings 'Microsoft.Web/sites/config@2022-03-01' = {
         registration: {
           clientId: apiApplicationID
           clientSecretSettingName: 'MICROSOFT_PROVIDER_AUTHENTICATION_SECRET'
-          openIdIssuer: 'https://sts.windows.net/${tenant().tenantId}'
+          openIdIssuer: '${environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
         }
         validation: {
           allowedAudiences: [

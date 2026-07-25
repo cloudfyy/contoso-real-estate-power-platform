@@ -97,6 +97,78 @@ function AssignRolesToPrincipal {
         throw "The Payments API app registration does not define these app roles: $($missingRoleNames -join ', '). Run azd provision to apply the latest app role definitions, then rerun this script."
     }
 }
+
+function EnsureClientApplicationRequiredResourceAccess {
+    param (
+        [string]$ClientApplicationObjectId,
+        [string]$ApiApplicationId,
+        [string]$RequiredRoleNames
+    )
+
+    $requiredRoleNamesArray = $RequiredRoleNames -split ',' | ForEach-Object { $_.Trim() }
+
+    $apiAppRolesJson = az ad app show --id $ApiApplicationId --query appRoles --output json 2>&1
+    Assert-AzCliSucceeded -Output $apiAppRolesJson -Operation "Reading Payments API app roles"
+    $apiAppRoles = $apiAppRolesJson | ConvertFrom-Json
+
+    $requiredRoleIds = @()
+    foreach ($roleName in $requiredRoleNamesArray) {
+        $role = $apiAppRoles | Where-Object { $_.value -eq $roleName } | Select-Object -First 1
+        if ($null -eq $role) {
+            throw "The Payments API app registration does not define app role '$roleName'. Run azd provision to apply the latest app role definitions, then rerun this script."
+        }
+
+        $requiredRoleIds += [string]$role.id
+    }
+
+    $requiredResourceAccessJson = az ad app show --id $ClientApplicationObjectId --query requiredResourceAccess --output json 2>&1
+    Assert-AzCliSucceeded -Output $requiredResourceAccessJson -Operation "Reading Payments API client required resource access"
+    $requiredResourceAccess = @($requiredResourceAccessJson | ConvertFrom-Json)
+
+    $apiResourceAccess = $requiredResourceAccess | Where-Object { $_.resourceAppId -eq $ApiApplicationId } | Select-Object -First 1
+    if ($null -eq $apiResourceAccess) {
+        $apiResourceAccess = [PSCustomObject]@{
+            resourceAppId = $ApiApplicationId
+            resourceAccess = @()
+        }
+        $requiredResourceAccess += $apiResourceAccess
+    }
+
+    $existingResourceAccessIds = @($apiResourceAccess.resourceAccess | ForEach-Object { [string]$_.id })
+    $missingRoleIds = @($requiredRoleIds | Where-Object { $existingResourceAccessIds -notcontains $_ })
+    if ($missingRoleIds.Count -eq 0) {
+        Write-Host "Payments API client app already declares the required application permissions." -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($roleId in $missingRoleIds) {
+        Write-Host "Adding Payments API application permission '$roleId' to the client app registration" -ForegroundColor Green
+        $apiResourceAccess.resourceAccess += [PSCustomObject]@{
+            id = $roleId
+            type = 'Role'
+        }
+    }
+
+    $body = @{
+        requiredResourceAccess = $requiredResourceAccess
+    } | ConvertTo-Json -Depth 20
+
+    $bodyFile = New-TemporaryFile
+    Set-Content -Path $bodyFile -Value $body -Encoding utf8
+
+    try {
+        $updateResult = az rest `
+            --method PATCH `
+            --uri "https://graph.microsoft.com/v1.0/applications/$ClientApplicationObjectId" `
+            --headers "Content-Type=application/json" `
+            --body "@$bodyFile" `
+            --output none 2>&1
+        Assert-AzCliSucceeded -Output $updateResult -Operation "Updating Payments API client required resource access"
+    }
+    finally {
+        Remove-Item -Path $bodyFile -Force
+    }
+}
 # -----------------------------------------------------------------------
 # Import the environment variables
 . "$PSScriptRoot\function-get-environment-variables.ps1"
@@ -106,12 +178,13 @@ $envVars = GetEnvironmentVariables -azureEnv $azureEnv
 Write-Host "This script and assigns all the app roles of the payments api to the current user for testing" -ForegroundColor White
 
 $appId = $envVars.ENTRA_API_APP_ID
+$paymentsApiRoleNames = "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret,CanWritePaymentsApiClientSecret"
 
 # Assign the roles to the current user for testing
 Write-Host "Granting access to the Payment API for the current user" -ForegroundColor Green
 $currentUserPrincipalId = az ad signed-in-user show --query id -o tsv 2>&1
 Assert-AzCliSucceeded -Output $currentUserPrincipalId -Operation "Reading current Azure CLI user"
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret,CanWritePaymentsApiClientSecret" -principalId $currentUserPrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames $paymentsApiRoleNames -principalId $currentUserPrincipalId -appId $appId
 
 # The Client for Contoso Real Estate Payments API needs admin consent if it's used as a service principal to access the API
 Write-Host "Granting access to the Payment API for the SPN used in connections" -ForegroundColor Green
@@ -120,7 +193,11 @@ Assert-AzCliSucceeded -Output $clientServicePrincipalId -Operation "Reading Paym
 if ([string]::IsNullOrWhiteSpace($clientServicePrincipalId)) {
     throw "Could not find the service principal for Payments API client app '$($envVars.ENTRA_API_CLIENT_APP_ID)'. Run azd provision, then rerun this script."
 }
-AssignRolesToPrincipal -roleNames "CanAddPayments,CanQueryPayments,CanCreateStripeSessions,CanInitializePaymentsDatabase,CanConfigureStripe,CanValidatePaymentsConfiguration,CanReadPaymentsApiClientSecret,CanWritePaymentsApiClientSecret" -principalId $clientServicePrincipalId -appId $appId
+AssignRolesToPrincipal -roleNames $paymentsApiRoleNames -principalId $clientServicePrincipalId -appId $appId
+EnsureClientApplicationRequiredResourceAccess `
+    -ClientApplicationObjectId $envVars.ENTRA_API_CLIENT_OBJECT_ID `
+    -ApiApplicationId $appId `
+    -RequiredRoleNames $paymentsApiRoleNames
 $adminConsentResult = az ad app permission admin-consent --id $envVars.ENTRA_API_CLIENT_APP_ID 2>&1
 Assert-AzCliSucceeded -Output $adminConsentResult -Operation "Granting admin consent to the Payments API client app"
 

@@ -193,41 +193,6 @@ function Get-PaymentsApiAccessTokenWithRole {
     throw "Could not acquire an access token containing audience '$expectedAudience' and role '$RequiredRole'. Check the app role assignment and admin consent for client app '$ApiClientAppId'."
 }
 
-function New-PaymentsApiClientSecret {
-    param (
-        [string]$ClientAppObjectId
-    )
-
-    $body = @{
-        passwordCredential = @{
-            displayName = 'Client Secret for SQL initialization'
-            endDateTime = (Get-Date).ToUniversalTime().AddDays(60).ToString('yyyy-MM-ddTHH:mm:ssZ')
-        }
-    } | ConvertTo-Json -Depth 4 -Compress
-
-    Write-Host "Generating a new Payments API client secret" -ForegroundColor Yellow
-    $bodyFile = New-TemporaryFile
-    Set-Content -Path $bodyFile -Value $body -Encoding utf8
-
-    try {
-        $credential = az rest `
-            --method post `
-            --url "https://graph.microsoft.com/v1.0/applications/$ClientAppObjectId/addPassword" `
-            --body "@$bodyFile" `
-            --headers 'Content-Type=application/json' `
-            --output json | ConvertFrom-Json
-    }
-    finally {
-        Remove-Item -Path $bodyFile -Force
-    }
-
-    if ([string]::IsNullOrWhiteSpace($credential.secretText)) {
-        throw 'Microsoft Graph did not return a generated client secret.'
-    }
-
-    return $credential.secretText
-}
-
 function Invoke-SqlInitializationWithRetry {
     param (
         [string]$Uri,
@@ -335,28 +300,6 @@ function Wait-FunctionAppSetting {
     throw "Function App setting '$Name' did not become the expected value."
 }
 
-function Set-PaymentsApiClientSecretSetting {
-    param (
-        [string]$ResourceGroupName,
-        [string]$FunctionAppName,
-        [string]$ApiClientSecret
-    )
-
-    Write-Host "Saving the new Payments API client secret to Function App settings" -ForegroundColor Yellow
-    az functionapp config appsettings set `
-        --resource-group $ResourceGroupName `
-        --name $FunctionAppName `
-        --settings "PAYMENTS_API_CLIENT_SECRET=$ApiClientSecret" `
-        --output none
-
-    Wait-FunctionAppSetting `
-        -ResourceGroupName $ResourceGroupName `
-        -FunctionAppName $FunctionAppName `
-        -Name 'PAYMENTS_API_CLIENT_SECRET' `
-        -ExpectedValue $ApiClientSecret `
-        -RedactValue
-}
-
 Write-Host "Initializing the payments SQL database through the Function App" -ForegroundColor White
 
 . "$PSScriptRoot\function-get-environment-variables.ps1"
@@ -408,7 +351,6 @@ az sql server ad-admin create `
     --output none
 
 try {
-    $apiClientSecretGenerated = $false
     $apiClientSecret = az functionapp config appsettings list `
         --resource-group $resourceGroupName `
         --name $functionAppName `
@@ -416,16 +358,7 @@ try {
         --output tsv
 
     if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
-        Write-Host "PAYMENTS_API_CLIENT_SECRET is not set. Falling back to MICROSOFT_PROVIDER_AUTHENTICATION_SECRET for this run." -ForegroundColor Yellow
-        $apiClientSecret = az functionapp config appsettings list `
-            --resource-group $resourceGroupName `
-            --name $functionAppName `
-            --query "[?name=='MICROSOFT_PROVIDER_AUTHENTICATION_SECRET'].value | [0]" `
-            --output tsv
-    }
-
-    if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
-        throw "Could not read the Payments API client secret from Function App '$functionAppName'. Run azd provision to generate and apply the client secret."
+        throw "Could not read PAYMENTS_API_CLIENT_SECRET from Function App '$functionAppName'. Run azd provision, or run infra/scripts/repair-payments-api-easyauth-secret.ps1 if the configured client secret is invalid."
     }
 
     try {
@@ -441,20 +374,7 @@ try {
             throw
         }
 
-        $apiClientSecret = New-PaymentsApiClientSecret `
-            -ClientAppObjectId $apiClientObjectId
-        $apiClientSecretGenerated = $true
-        Set-PaymentsApiClientSecretSetting `
-            -ResourceGroupName $resourceGroupName `
-            -FunctionAppName $functionAppName `
-            -ApiClientSecret $apiClientSecret
-
-        $token = Get-PaymentsApiAccessTokenWithRole `
-            -TenantId $tenantId `
-            -ApiAppId $apiAppId `
-            -ApiClientAppId $apiClientAppId `
-            -ApiClientSecret $apiClientSecret `
-            -RequiredRole 'CanInitializePaymentsDatabase'
+        throw "The configured PAYMENTS_API_CLIENT_SECRET is invalid. Run infra/scripts/repair-payments-api-easyauth-secret.ps1 to repair the client secret, then rerun this script."
     }
 
     if ([string]::IsNullOrWhiteSpace($token)) {
@@ -466,9 +386,6 @@ try {
         "SQL_MANAGED_IDENTITY_CLIENT_ID=$functionClientId",
         "SQL_MANAGED_IDENTITY_OBJECT_ID=$functionClientId"
     )
-    if ($apiClientSecretGenerated) {
-        $settings += "PAYMENTS_API_CLIENT_SECRET=$apiClientSecret"
-    }
 
     Write-Host "Waiting for the Function App to apply initialization settings" -ForegroundColor Yellow
     az functionapp config appsettings set `
