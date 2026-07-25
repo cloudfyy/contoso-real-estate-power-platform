@@ -23,35 +23,18 @@ Follow these steps to create a development environment:
 
 To start contributing, you'll need to set up your developer environment. Here's a step-by-step guide:
 
-0. Build the `ContosoRealEstateCustomControls_managed.zip` dependency locally when you cannot download it from GitHub releases, for example because of company network or package registry policy.
+0. Build the `ContosoRealEstateCustomControls_managed.zip` dependency locally when you cannot download it from GitHub releases, for example because of company network or package registry policy, or when you need packages that match your local source changes.
 
    The recommended version is Node.js 18 LTS with npm 9. Use Node.js 18 LTS for this PCF project because newer Node.js versions can fail with the current toolchain.
 
    ```powershell
    Set-Location <repo_root>
-   $repoRoot = (Get-Location).Path
-
    node --version
    npm --version
-
-   Set-Location (Join-Path $repoRoot "src/controls/image-grid-pcf")
-   npm ci
-   npm run build
-
-   # Build the Power Platform solution package. This includes the PCF UI bundle and creates the managed zip file.
-   Set-Location (Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls")
-   dotnet restore ./ContosoRealEstateCustomControls.cdsproj
-   dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release
-
-   $tempReleaseFolder = Join-Path $repoRoot "temp_releases"
-   $managedSolutionZip = Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls/bin/ContosoRealEstateCustomControls_managed.zip"
-   if (-not (Test-Path $managedSolutionZip)) {
-      throw "The managed solution zip was not created: $managedSolutionZip"
-   }
-
-   New-Item -ItemType Directory -Force $tempReleaseFolder | Out-Null
-   Copy-Item $managedSolutionZip (Join-Path $tempReleaseFolder "ContosoRealEstateCustomControls_managed.zip") -Force
+   ./scripts/build-release-packages.ps1 -Solution Controls
    ```
+
+   The build script verifies the generated package versions and required PCF files. Use `-Clean` to force a rebuild, `-CleanNodeModules` to reinstall npm dependencies, and `-UseExistingPackages` to skip rebuilding when existing packages are valid.
 
    > [!NOTE]
    > If your company requires a private npm registry, place the project-level `.npmrc` file in each npm project that is built locally: `<repo_root>/src/controls/image-grid-pcf/.npmrc` and `<repo_root>/src/core/mda-client-hooks/.npmrc`. Do not commit credentials or tokens.
@@ -96,9 +79,8 @@ To start contributing, you'll need to set up your developer environment. Here's 
 1. To build the solution use the following from a terminal inside VS Code:
 
    ```powershell
-   cd <repo_root>/src/core/ContosoRealEstateCore
-   dotnet restore
-   dotnet build -c Release
+   cd <repo_root>
+   ./scripts/build-release-packages.ps1 -Solution Core
    ```
 
 **IMPORTANT:** Unless you use the Release mode to build, you will see an error during import:
@@ -108,7 +90,7 @@ Import Solution Failed: CustomControl with name Contoso.PortalReactUI failed to 
 CustomControl with name Contoso.PortalReactUI failed to import with error: Webresource content size is too big.
 ```
 
-1. Import the newly built `ContosoRealEstateCore.zip` found at `<repo_root>\src\core\ContosoRealEstateCore\bin`
+1. Import the newly built `ContosoRealEstateCore.zip` found at `<repo_root>\src\core\solution\ContosoRealEstateCore\bin`
    **IMPORTANT:** You must install the **unmanaged** version of the solution.
 
 1. Install the reference and sample data using:
@@ -143,7 +125,7 @@ Run the following PowerShell and follow the instructions carefully:
     **NOTE:** The solution was initially setup using:
     
     ```powershell
-    cd <repo_root>/src/core/ContosoRealEstateCore
+   cd <repo_root>/src/core/solution/ContosoRealEstateCore
     pac solution clone -n ContosoRealEstateCore -a -pca -p Both
     ```
     

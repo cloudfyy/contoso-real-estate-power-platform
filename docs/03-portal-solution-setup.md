@@ -87,12 +87,11 @@ To start contributing, you'll need to set up your developer environment.
 1. To build the solution use the following from a terminal inside VS Code:
 
    ```powershell
-   cd <repo_root>/src/portal/ContosoRealEstateCore
-   dotnet restore
-   dotnet build -c Release
+   cd <repo_root>
+   ./scripts/build-release-packages.ps1 -Solution Portal
    ```
 
-1. Import the newly built `ContosoRealEstateCore.zip` found at `<repo_root>/src/portal/ContosoRealEstatePortal/bin`
+1. Import the newly built `ContosoRealEstatePortal.zip` found at `<repo_root>/src/portal/solution/ContosoRealEstatePortal/bin`
    **IMPORTANT:** You must install the **unmanaged** version of the solution.
 
 1. Install the reference and sample data using:
@@ -218,8 +217,8 @@ NOTE: If the client application is not configured for multi-tenant then you will
    **NOTE:** The solution was initially setup using:
 
    ```powershell
-   cd <repo_root>/src/portal/ContosoRealEstatePortal
-   pac solution clone -n ContosoRealEstateCore -a -p Both
+   cd <repo_root>/src/portal/solution/ContosoRealEstatePortal
+   pac solution clone -n ContosoRealEstatePortal -a -p Both
    ```
 
 1. Examine the changes that are synced, and remove any '*noisy*' diffs that are not part of your changes.

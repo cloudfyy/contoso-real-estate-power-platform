@@ -533,35 +533,18 @@ To perform the post deployment:
 
 The Core development environment has the custom controls solution deployed as managed, and the Core solution deployed as unmanaged to enable it to be worked on.
 
-0. Build the `ContosoRealEstateCustomControls_managed.zip` dependency locally when you cannot download it from GitHub releases, for example because of company network or package registry policy.
+0. Build the solution packages locally when you cannot download them from GitHub releases, for example because of company network or package registry policy, or when you need packages that match your local source changes.
 
-   The recommended version is Node.js 18 LTS with npm 9. Use Node.js 18 LTS for this PCF project because newer Node.js versions can fail with the current toolchain.
+   The recommended version is Node.js 18 LTS with npm 9. Use Node.js 18 LTS for the PCF projects because newer Node.js versions can fail with the current toolchain.
 
    ```powershell
    Set-Location <repo_root>
-   $repoRoot = (Get-Location).Path
-
    node --version
    npm --version
-
-   Set-Location (Join-Path $repoRoot "src/controls/image-grid-pcf")
-   npm ci
-   npm run build
-
-   # Build the Power Platform solution package. This includes the PCF UI bundle and creates the managed zip file.
-   Set-Location (Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls")
-   dotnet restore ./ContosoRealEstateCustomControls.cdsproj
-   dotnet build ./ContosoRealEstateCustomControls.cdsproj -c Release
-
-   $tempReleaseFolder = Join-Path $repoRoot "temp_releases"
-   $managedSolutionZip = Join-Path $repoRoot "src/controls/solution/ContosoRealEstateCustomControls/bin/ContosoRealEstateCustomControls_managed.zip"
-   if (-not (Test-Path $managedSolutionZip)) {
-      throw "The managed solution zip was not created: $managedSolutionZip"
-   }
-
-   New-Item -ItemType Directory -Force $tempReleaseFolder | Out-Null
-   Copy-Item $managedSolutionZip (Join-Path $tempReleaseFolder "ContosoRealEstateCustomControls_managed.zip") -Force
+   ./scripts/build-release-packages.ps1 -Solution Controls
    ```
+
+   The build script verifies the generated managed and unmanaged solution zips. Use `-Clean` to remove build outputs before rebuilding, `-CleanNodeModules` to also reinstall npm packages, and `-UseExistingPackages` to reuse already generated packages after validating their versions and key files.
 
    > [!NOTE]
    > If your company requires a private npm registry, place the project-level `.npmrc` file in each npm project that is built locally: `<repo_root>/src/controls/image-grid-pcf/.npmrc` and `<repo_root>/src/core/mda-client-hooks/.npmrc`. Do not commit credentials or tokens.
@@ -646,6 +629,15 @@ To deploy the Portal solution, perform the following steps:
 1. The Portal solution will be built locally
 
 1. The **managed** solutions are first installed, and then the portal **unmanaged** solution is imported.
+
+> [!TIP]
+> To build all local solution packages before importing them, run:
+>
+> ```powershell
+> ./scripts/build-release-packages.ps1
+> ```
+>
+> The script prints timing for each solution and verifies that each zip contains the expected solution version and key components. To fully rebuild from scratch, use `-Clean`; to also reinstall npm dependencies, use `-CleanNodeModules`.
 
 ## ✅Core Post Deployment Set up
 

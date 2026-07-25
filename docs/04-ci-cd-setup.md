@@ -183,3 +183,36 @@ A responsitory variable is needed to control which solutions are built.
 
 - (Optional) `ACTIONS_STEP_DEBUG` = true/false
 
+## Local package build and release helpers
+
+Use the repository build helper to create and validate local solution packages:
+
+```powershell
+./scripts/build-release-packages.ps1
+```
+
+The helper builds Controls, Core, and Portal solution packages, prints timing for each solution, and verifies that each zip contains the expected solution version and key package entries. Useful options:
+
+```powershell
+./scripts/build-release-packages.ps1 -Solution Core
+./scripts/build-release-packages.ps1 -UseExistingPackages
+./scripts/build-release-packages.ps1 -Clean
+./scripts/build-release-packages.ps1 -Clean -CleanNodeModules
+./scripts/build-release-packages.ps1 -VerifyOnly
+```
+
+To publish GitHub releases from the current solution versions, use the release helper. Always preview first:
+
+```powershell
+./scripts/publish-solution-releases.ps1 -WhatIf
+```
+
+The release helper reads each current solution version, increments the third version segment, resets the fourth segment to `0`, builds and verifies packages, commits the version changes, pushes the branch, and creates GitHub releases with managed and unmanaged zip assets. Examples:
+
+```powershell
+./scripts/publish-solution-releases.ps1 -Solution Core -WhatIf
+./scripts/publish-solution-releases.ps1 -Solution Core
+./scripts/publish-solution-releases.ps1 -Repository <owner>/<repo>
+./scripts/publish-solution-releases.ps1 -Clean
+```
+
