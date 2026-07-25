@@ -149,10 +149,8 @@ if ($PSCmdlet.ShouldProcess($Repository, 'publish solution releases')) {
     catch {
         if (-not $versionFilesCommitted) {
             Write-Host 'Release publishing failed before version files were committed. Restoring original solution versions.' -ForegroundColor Yellow
-            git restore --staged -- @versionFiles *> $null
-            foreach ($release in $releasePlan) {
-                Set-SolutionVersion -SolutionXmlPath $release.SolutionXmlPath -Version $release.CurrentVersion
-            }
+            git restore --staged -- $versionFiles *> $null
+            git restore --worktree -- $versionFiles *> $null
         }
 
         throw
