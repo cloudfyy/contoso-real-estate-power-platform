@@ -98,47 +98,63 @@ foreach ($release in $releasePlan) {
 if ($PSCmdlet.ShouldProcess($Repository, 'publish solution releases')) {
     Assert-CleanGitWorktree
 
-    foreach ($release in $releasePlan) {
-        Write-Host "Setting $($release.Name) solution version to $($release.NextVersion)." -ForegroundColor Cyan
-        Set-SolutionVersion -SolutionXmlPath $release.SolutionXmlPath -Version $release.NextVersion
-    }
-
-    $buildArguments = @{
-        Solution = @($releasePlan.BuildSolution)
-    }
-    if ($Clean) {
-        $buildArguments.Clean = $true
-    }
-    if ($CleanNodeModules) {
-        $buildArguments.CleanNodeModules = $true
-    }
-
-    Invoke-ExternalCommand -CommandDescription 'Build release packages' -ScriptBlock {
-        & (Join-Path -Path $repoRoot -ChildPath 'scripts\build-release-packages.ps1') @buildArguments
-    }
-
     $versionFiles = @($releasePlan | ForEach-Object { $_.SolutionXmlPath })
-    Invoke-ExternalCommand -CommandDescription 'Stage release version files' -ScriptBlock {
-        git add @versionFiles
-    }
+    $versionFilesCommitted = $false
 
-    Invoke-ExternalCommand -CommandDescription 'Commit release version files' -ScriptBlock {
-        git commit -m 'Bump solution versions for release'
-    }
-
-    if (-not $SkipPush) {
-        Invoke-ExternalCommand -CommandDescription "Push $Remote $Branch" -ScriptBlock {
-            git push $Remote $Branch
+    try {
+        foreach ($release in $releasePlan) {
+            Write-Host "Setting $($release.Name) solution version to $($release.NextVersion)." -ForegroundColor Cyan
+            Set-SolutionVersion -SolutionXmlPath $release.SolutionXmlPath -Version $release.NextVersion
         }
-    }
 
-    foreach ($release in $releasePlan) {
-        $notes = "$($release.UniqueName) solution package release $($release.ReleaseVersion)."
-        $assetArguments = @($release.PackagePaths)
-        Invoke-ExternalCommand -CommandDescription "Create GitHub release $($release.TagName)" -ScriptBlock {
-            gh release create $release.TagName @assetArguments --repo $Repository --target $Branch --title $release.Title --notes $notes
+        $buildArguments = @{
+            Solution = @($releasePlan.BuildSolution)
         }
-    }
+        if ($Clean) {
+            $buildArguments.Clean = $true
+        }
+        if ($CleanNodeModules) {
+            $buildArguments.CleanNodeModules = $true
+        }
 
-    Write-Host 'Release publishing complete.' -ForegroundColor Green
+        Invoke-ExternalCommand -CommandDescription 'Build release packages' -ScriptBlock {
+            & (Join-Path -Path $repoRoot -ChildPath 'scripts\build-release-packages.ps1') @buildArguments
+        }
+
+        Invoke-ExternalCommand -CommandDescription 'Stage release version files' -ScriptBlock {
+            git add @versionFiles
+        }
+
+        Invoke-ExternalCommand -CommandDescription 'Commit release version files' -ScriptBlock {
+            git commit -m 'Bump solution versions for release'
+        }
+        $versionFilesCommitted = $true
+
+        if (-not $SkipPush) {
+            Invoke-ExternalCommand -CommandDescription "Push $Remote $Branch" -ScriptBlock {
+                git push $Remote $Branch
+            }
+        }
+
+        foreach ($release in $releasePlan) {
+            $notes = "$($release.UniqueName) solution package release $($release.ReleaseVersion)."
+            $assetArguments = @($release.PackagePaths)
+            Invoke-ExternalCommand -CommandDescription "Create GitHub release $($release.TagName)" -ScriptBlock {
+                gh release create $release.TagName @assetArguments --repo $Repository --target $Branch --title $release.Title --notes $notes
+            }
+        }
+
+        Write-Host 'Release publishing complete.' -ForegroundColor Green
+    }
+    catch {
+        if (-not $versionFilesCommitted) {
+            Write-Host 'Release publishing failed before version files were committed. Restoring original solution versions.' -ForegroundColor Yellow
+            git restore --staged -- @versionFiles *> $null
+            foreach ($release in $releasePlan) {
+                Set-SolutionVersion -SolutionXmlPath $release.SolutionXmlPath -Version $release.CurrentVersion
+            }
+        }
+
+        throw
+    }
 }
