@@ -80,7 +80,7 @@ To start contributing, you'll need to set up your developer environment.
 
 1. Ensure you have all the updates installed via the Dynamics 365 apps page in the [admin portal](https://admin.powerplatform.microsoft.com/)
 
-1. Run the script at `src\portal\solution\deployment-scripts\deploy-to-development-environment.ps1` and follow the instructions carefully.
+1. Run the script at `src\portal\solution\deployment-scripts\deploy-to-development-environment.ps1` and follow the instructions carefully. The script asks whether to download dependency packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing `ContosoRealEstateCustomControls_managed.zip` and `ContosoRealEstateCore_managed.zip`. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed zips into `temp_releases`.
 
 ### Building the solution without the deployment script
 

@@ -72,7 +72,7 @@ To start contributing, you'll need to set up your developer environment. Here's 
 
    1. Select **Install**.
 
-1. Follow the instructions when running the script [1-deploy-to-development-environment.ps1](/src/core/solution/deployment-scripts/1-deploy-to-development-environment.ps1)
+1. Follow the instructions when running the script [1-deploy-to-development-environment.ps1](/src/core/solution/deployment-scripts/1-deploy-to-development-environment.ps1). The script asks whether to download dependency packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing `ContosoRealEstateCustomControls_managed.zip`. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed zip into `temp_releases`.
 
 ### Manually building and deploying the solution
 

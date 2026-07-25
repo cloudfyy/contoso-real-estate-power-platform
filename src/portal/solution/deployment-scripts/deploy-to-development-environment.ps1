@@ -14,14 +14,30 @@ $repoRoot =  Join-Path -Path $PSScriptRoot -ChildPath "/../../../../"
 $repoRoot = (Get-Item -Path $repoRoot).FullName
 
 . "$repoRoot/src/core/solution/deployment-scripts/function-get-environment-variables.ps1"
-$releaseRepositoryName = GetGitHubRepositoryName -remoteNames @('upstream', 'origin')
+$releaseRepositoryName = GetGitHubRepositoryName -remoteNames @('origin')
 $envVars = GetEnvironmentVariables -azureEnv $azureEnv
 
 $sourceFolder = Join-Path -Path $PSScriptRoot -ChildPath "../$solutionName"
 $tempReleaseFolder = Join-Path -Path $repoRoot -ChildPath "/temp_releases"
 
-SaveGitHubReleaseAsset -repositoryName $releaseRepositoryName -assetName "ContosoRealEstateCustomControls_managed.zip" -outputFolder $tempReleaseFolder > $null
-SaveGitHubReleaseAsset -repositoryName $releaseRepositoryName -assetName "ContosoRealEstateCore_managed.zip" -outputFolder $tempReleaseFolder > $null
+$dependencies = @(
+    @{
+        AssetName = 'ContosoRealEstateCustomControls_managed.zip'
+        BuildSolution = 'Controls'
+        LocalAssetPath = Join-Path -Path $repoRoot -ChildPath 'src/controls/solution/ContosoRealEstateCustomControls/bin/ContosoRealEstateCustomControls_managed.zip'
+    },
+    @{
+        AssetName = 'ContosoRealEstateCore_managed.zip'
+        BuildSolution = 'Core'
+        LocalAssetPath = Join-Path -Path $repoRoot -ChildPath 'src/core/solution/ContosoRealEstateCore/bin/ContosoRealEstateCore_managed.zip'
+    }
+)
+
+InitializeSolutionDependencyAssets `
+    -repositoryName $releaseRepositoryName `
+    -outputFolder $tempReleaseFolder `
+    -repoRoot $repoRoot `
+    -dependencies $dependencies
 
 Write-Host "Building solution at '$sourceFolder'" -ForegroundColor Green
 dotnet build -c Release "$sourceFolder"

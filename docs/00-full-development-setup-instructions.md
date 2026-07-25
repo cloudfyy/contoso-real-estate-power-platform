@@ -557,7 +557,7 @@ The Core development environment has the custom controls solution deployed as ma
 
 1. Inside **VSCode**, drag the script located at `src\core\solution\deployment-scripts\1-deploy-to-development-environment.ps1` into the PowerShell terminal window, and press **Enter** to execute it
 
-1. Follow the instructions when running the script carefully. You will need to select the Azure environment that you deployed using `azd up`. The script automatically downloads the latest `ContosoRealEstateCustomControls_managed.zip` solution from [releases](https://github.com/microsoft/contoso-real-estate-power-platform/releases?q=ContosoRealEstateCustomControls&expanded=true) unless the file already exists in the `temp_releases` folder.
+1. Follow the instructions when running the script carefully. You will need to select the Azure environment that you deployed using `azd up`. The script asks whether to download dependency packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing the dependency packages. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed zip into `temp_releases`.
 
 > [!NOTE]
 >
@@ -624,7 +624,7 @@ To deploy the Portal solution, perform the following steps:
 
 1. Drag into the terminal the script at `src\portal\solution\deployment-scripts\deploy-to-development-environment.ps1`, press Enter, and follow the instructions carefully.
 
-1. You will be prompted to download the latest [Custom Controls managed](https://github.com/microsoft/contoso-real-estate-power-platform/releases?q=ContosoRealEstateCustomControls&expanded=true) and [Core managed](https://github.com/microsoft/contoso-real-estate-power-platform/releases?q=ContosoRealEstateCore&expanded=true) solutions from [releases](https://github.com/microsoft/contoso-real-estate-power-platform/releases) and place into the temp_release folder location given.
+1. The deployment script asks whether to download dependency packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing `ContosoRealEstateCustomControls_managed.zip` and `ContosoRealEstateCore_managed.zip`. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed zips into `temp_releases`.
 
 1. The Portal solution will be built locally
 

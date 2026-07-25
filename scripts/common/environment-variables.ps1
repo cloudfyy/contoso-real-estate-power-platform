@@ -243,3 +243,122 @@ function SaveGitHubReleaseAsset {
         exit 1
     }
 }
+
+function GetSolutionPackageInfo {
+    param (
+        [string]$packagePath
+    )
+
+    if (-not (Test-Path -Path $packagePath)) {
+        throw "Solution package '$packagePath' does not exist."
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -Path $packagePath))
+    try {
+        $solutionEntry = $zip.Entries | Where-Object FullName -eq 'solution.xml' | Select-Object -First 1
+        if ($null -eq $solutionEntry) {
+            throw "Solution package '$packagePath' does not contain solution.xml."
+        }
+
+        $reader = [System.IO.StreamReader]::new($solutionEntry.Open())
+        try {
+            [xml]$solutionXml = $reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+        }
+
+        $manifest = $solutionXml.ImportExportXml.SolutionManifest
+        return [pscustomobject]@{
+            Path = $packagePath
+            UniqueName = [string]$manifest.UniqueName
+            Version = [string]$manifest.Version
+            Managed = [int]$manifest.Managed
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
+function ReadSolutionDependencySource {
+    Write-Host @"
+Choose the source for dependency solution packages:
+[G] Download from GitHub releases in your origin repository
+[B] Build from local source. This can take up to 20 minutes.
+"@ -ForegroundColor Yellow
+
+    while ($true) {
+        $selection = Read-Host 'Enter G or B [G]'
+        if ([string]::IsNullOrWhiteSpace($selection)) {
+            return 'GitHubRelease'
+        }
+
+        switch ($selection.Trim().ToUpperInvariant()) {
+            'G' { return 'GitHubRelease' }
+            'B' { return 'LocalBuild' }
+        }
+
+        Write-Host "Invalid selection '$selection'. Enter G or B." -ForegroundColor Yellow
+    }
+}
+
+function ClearSolutionDependencyFolder {
+    param (
+        [string]$outputFolder
+    )
+
+    if (Test-Path -Path $outputFolder) {
+        Write-Host "Clearing solution dependency folder '$outputFolder'" -ForegroundColor Yellow
+        Remove-Item -Path $outputFolder -Recurse -Force
+    }
+
+    New-Item -ItemType Directory -Path $outputFolder > $null
+}
+
+function InitializeSolutionDependencyAssets {
+    param (
+        [string]$repositoryName,
+        [string]$outputFolder,
+        [string]$repoRoot,
+        [array]$dependencies
+    )
+
+    $source = ReadSolutionDependencySource
+    ClearSolutionDependencyFolder -outputFolder $outputFolder
+
+    if ($source -eq 'LocalBuild') {
+        Write-Host 'Building dependency solution packages from local source. This can take up to 20 minutes.' -ForegroundColor Yellow
+        $buildSolutions = @($dependencies | ForEach-Object { $_.BuildSolution } | Select-Object -Unique)
+        & (Join-Path -Path $repoRoot -ChildPath 'scripts/build-release-packages.ps1') -Solution $buildSolutions
+        if ($LASTEXITCODE -ne 0) {
+            throw "Local dependency package build failed with exit code $LASTEXITCODE."
+        }
+
+        foreach ($dependency in $dependencies) {
+            $outputPath = Join-Path -Path $outputFolder -ChildPath $dependency.AssetName
+            if (-not (Test-Path -Path $dependency.LocalAssetPath)) {
+                throw "Local dependency package was not created: '$($dependency.LocalAssetPath)'."
+            }
+
+            Write-Host "Copying locally built dependency '$($dependency.LocalAssetPath)' to '$outputPath'" -ForegroundColor Green
+            Copy-Item -Path $dependency.LocalAssetPath -Destination $outputPath -Force
+        }
+    }
+    else {
+        foreach ($dependency in $dependencies) {
+            SaveGitHubReleaseAsset `
+                -repositoryName $repositoryName `
+                -assetName $dependency.AssetName `
+                -outputFolder $outputFolder > $null
+        }
+    }
+
+    Write-Host 'Dependency solution package versions:' -ForegroundColor Cyan
+    foreach ($dependency in $dependencies) {
+        $packagePath = Join-Path -Path $outputFolder -ChildPath $dependency.AssetName
+        $packageInfo = GetSolutionPackageInfo -packagePath $packagePath
+        Write-Host "  $($dependency.AssetName): $($packageInfo.UniqueName) $($packageInfo.Version)" -ForegroundColor Cyan
+    }
+}
