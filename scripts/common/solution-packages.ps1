@@ -338,6 +338,226 @@ function Clear-SolutionPackageTransientFolders {
     }
 }
 
+function Get-LargestFreeFileSystemRoot {
+    $drive = Get-PSDrive -PSProvider FileSystem |
+        Where-Object { $null -ne $_.Free -and -not [string]::IsNullOrWhiteSpace($_.Root) } |
+        Sort-Object -Property Free -Descending |
+        Select-Object -First 1
+
+    if ($null -eq $drive) {
+        throw 'Could not find a filesystem drive for isolated workspace builds.'
+    }
+
+    return $drive.Root
+}
+
+function Get-IsolatedMarkerPath {
+    param (
+        [string]$Path
+    )
+
+    return Join-Path -Path $Path -ChildPath '.contoso-isolated-build'
+}
+
+function Assert-IsolatedOwnedPath {
+    param (
+        [string]$Path,
+        [string]$Purpose
+    )
+
+    if (-not (Test-Path -Path $Path)) {
+        return
+    }
+
+    $markerPath = Get-IsolatedMarkerPath -Path $Path
+    if (-not (Test-Path -Path $markerPath)) {
+        throw "$Purpose directory '$Path' already exists, but it was not created by this script. Remove it manually or choose another location."
+    }
+}
+
+function Initialize-IsolatedOwnedPath {
+    param (
+        [string]$Path,
+        [string]$Purpose
+    )
+
+    Assert-IsolatedOwnedPath -Path $Path -Purpose $Purpose
+    New-Item -ItemType Directory -Path $Path -Force > $null
+    Set-IsolatedOwnedPathMarker -Path $Path -Purpose $Purpose
+}
+
+function Set-IsolatedOwnedPathMarker {
+    param (
+        [string]$Path,
+        [string]$Purpose
+    )
+
+    Set-Content -Path (Get-IsolatedMarkerPath -Path $Path) -Value $Purpose -Encoding utf8
+}
+
+function Remove-IsolatedOwnedPath {
+    param (
+        [string]$Path,
+        [string]$Purpose
+    )
+
+    if (-not (Test-Path -Path $Path)) {
+        Write-Host "$Purpose directory '$Path' was not found." -ForegroundColor Yellow
+        return $false
+    }
+
+    Assert-IsolatedOwnedPath -Path $Path -Purpose $Purpose
+    Write-Host "Removing $Purpose directory '$Path'" -ForegroundColor Yellow
+    Remove-Item -Path $Path -Recurse -Force
+    return $true
+}
+
+function Invoke-RobocopyMirror {
+    param (
+        [string]$Source,
+        [string]$Destination,
+        [string[]]$ExcludeDirectories = @(),
+        [string[]]$ExcludeFiles = @()
+    )
+
+    New-Item -ItemType Directory -Path $Destination -Force > $null
+
+    $arguments = @(
+        $Source,
+        $Destination,
+        '/MIR',
+        '/R:3',
+        '/W:2',
+        '/NFL',
+        '/NDL',
+        '/NP',
+        '/NJH',
+        '/NJS'
+    )
+    if ($ExcludeDirectories.Count -gt 0) {
+        $arguments += @('/XD') + $ExcludeDirectories
+    }
+    if ($ExcludeFiles.Count -gt 0) {
+        $arguments += @('/XF') + $ExcludeFiles
+    }
+
+    & robocopy @arguments
+    if ($LASTEXITCODE -gt 7) {
+        throw "robocopy failed from '$Source' to '$Destination'. Exit code: $LASTEXITCODE."
+    }
+}
+
+function Copy-RepositoryToIsolatedWorkspace {
+    param (
+        [string]$SourceRoot,
+        [string]$DestinationRoot
+    )
+
+    Initialize-IsolatedOwnedPath -Path $DestinationRoot -Purpose 'isolated workspace'
+
+    $excludeDirectories = @(
+        '.git',
+        '.vs',
+        'bin',
+        'obj',
+        'Metadata',
+        'node_modules',
+        'SolutionPackager',
+        'SolutionPackagerLogs',
+        'temp_releases',
+        'temp_tools'
+    )
+    $excludeFiles = @('*.binlog')
+
+    Write-Host "Copying repository to isolated workspace '$DestinationRoot'" -ForegroundColor Cyan
+    Invoke-RobocopyMirror `
+        -Source $SourceRoot `
+        -Destination $DestinationRoot `
+        -ExcludeDirectories $excludeDirectories `
+        -ExcludeFiles $excludeFiles
+    Set-IsolatedOwnedPathMarker -Path $DestinationRoot -Purpose 'isolated workspace'
+}
+
+function Get-NodeModuleCachePaths {
+    param (
+        [array]$Definitions
+    )
+
+    @($Definitions | ForEach-Object { $_.NodeModulePaths } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Restore-IsolatedNodeModuleCache {
+    param (
+        [array]$Definitions,
+        [string]$CacheRoot,
+        [string]$WorkspaceRoot
+    )
+
+    Assert-IsolatedOwnedPath -Path $CacheRoot -Purpose 'isolated node_modules cache'
+    foreach ($relativePath in (Get-NodeModuleCachePaths -Definitions $Definitions)) {
+        $cachePath = Join-Path -Path $CacheRoot -ChildPath $relativePath
+        $workspacePath = Join-Path -Path $WorkspaceRoot -ChildPath $relativePath
+        if (-not (Test-Path -Path $cachePath)) {
+            Write-Host "No isolated node_modules cache found for '$relativePath'." -ForegroundColor Yellow
+            continue
+        }
+
+        Write-Host "Restoring isolated node_modules cache '$cachePath' to '$workspacePath'" -ForegroundColor Cyan
+        Invoke-RobocopyMirror -Source $cachePath -Destination $workspacePath
+    }
+}
+
+function Save-IsolatedNodeModuleCache {
+    param (
+        [array]$Definitions,
+        [string]$CacheRoot,
+        [string]$WorkspaceRoot
+    )
+
+    Initialize-IsolatedOwnedPath -Path $CacheRoot -Purpose 'isolated node_modules cache'
+    foreach ($relativePath in (Get-NodeModuleCachePaths -Definitions $Definitions)) {
+        $workspacePath = Join-Path -Path $WorkspaceRoot -ChildPath $relativePath
+        $cachePath = Join-Path -Path $CacheRoot -ChildPath $relativePath
+        if (-not (Test-Path -Path $workspacePath)) {
+            Write-Host "No node_modules folder was created for '$relativePath'. Skipping isolated cache update." -ForegroundColor Yellow
+            continue
+        }
+
+        Write-Host "Updating isolated node_modules cache '$cachePath' from '$workspacePath'" -ForegroundColor Cyan
+        Invoke-RobocopyMirror -Source $workspacePath -Destination $cachePath
+    }
+}
+
+function Clear-IsolatedNodeModuleCache {
+    param (
+        [string]$CacheRoot
+    )
+
+    Remove-IsolatedOwnedPath -Path $CacheRoot -Purpose 'isolated node_modules cache' > $null
+}
+
+function Copy-SolutionPackagesToRepository {
+    param (
+        [array]$Definitions,
+        [string]$SourceRoot,
+        [string]$DestinationRoot
+    )
+
+    foreach ($definition in $Definitions) {
+        foreach ($package in $definition.Packages) {
+            $sourcePath = Join-Path -Path $SourceRoot -ChildPath $package.Path
+            $destinationPath = Join-Path -Path $DestinationRoot -ChildPath $package.Path
+            if (-not (Test-Path -Path $sourcePath)) {
+                throw "Expected isolated package was not found: '$sourcePath'."
+            }
+
+            New-Item -ItemType Directory -Path (Split-Path -Path $destinationPath -Parent) -Force > $null
+            Copy-Item -Path $sourcePath -Destination $destinationPath -Force
+            Write-Host "Copied '$sourcePath' to '$destinationPath'" -ForegroundColor Green
+        }
+    }
+}
+
 function Clear-SolutionBuildOutputs {
     param (
         [hashtable]$Definition,

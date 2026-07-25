@@ -10,6 +10,7 @@ param (
     [switch]$Clean,
     [switch]$CleanNodeModules,
     [switch]$IsolatedWorkspace,
+    [switch]$CleanIsolatedCache,
     [switch]$SkipPush
 )
 
@@ -56,6 +57,13 @@ function Invoke-ExternalCommand {
 
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
+
+if ($CleanIsolatedCache -and -not $IsolatedWorkspace) {
+    Invoke-ExternalCommand -CommandDescription 'Clean isolated node_modules cache' -ScriptBlock {
+        & (Join-Path -Path $repoRoot -ChildPath 'scripts\build-release-packages.ps1') -CleanIsolatedCache
+    }
+    return
+}
 
 if ([string]::IsNullOrWhiteSpace($Repository)) {
     $Repository = Get-GitHubRepositoryName -RemoteName $Remote
@@ -119,6 +127,9 @@ if ($PSCmdlet.ShouldProcess($Repository, 'publish solution releases')) {
         }
         if ($IsolatedWorkspace) {
             $buildArguments.IsolatedWorkspace = $true
+        }
+        if ($CleanIsolatedCache) {
+            $buildArguments.CleanIsolatedCache = $true
         }
 
         Invoke-ExternalCommand -CommandDescription 'Build release packages' -ScriptBlock {

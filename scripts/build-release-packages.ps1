@@ -7,76 +7,13 @@ param (
     [switch]$VerifyOnly,
     [switch]$Clean,
     [switch]$CleanNodeModules,
-    [switch]$IsolatedWorkspace
+    [switch]$IsolatedWorkspace,
+    [switch]$CleanIsolatedCache
 )
 
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\common\solution-packages.ps1"
-
-function Copy-RepositoryToIsolatedWorkspace {
-    param (
-        [string]$SourceRoot,
-        [string]$DestinationRoot
-    )
-
-    New-Item -ItemType Directory -Path $DestinationRoot -Force > $null
-
-    $excludeDirectories = @(
-        '.git',
-        '.vs',
-        'bin',
-        'obj',
-        'Metadata',
-        'node_modules',
-        'SolutionPackager',
-        'SolutionPackagerLogs',
-        'temp_releases',
-        'temp_tools'
-    )
-    $excludeFiles = @('*.binlog')
-    $arguments = @(
-        $SourceRoot,
-        $DestinationRoot,
-        '/MIR',
-        '/R:3',
-        '/W:2',
-        '/NFL',
-        '/NDL',
-        '/NP',
-        '/NJH',
-        '/NJS',
-        '/XD'
-    ) + $excludeDirectories + @('/XF') + $excludeFiles
-
-    Write-Host "Copying repository to isolated workspace '$DestinationRoot'" -ForegroundColor Cyan
-    & robocopy @arguments
-    if ($LASTEXITCODE -gt 7) {
-        throw "Failed to copy repository to isolated workspace. robocopy exit code: $LASTEXITCODE."
-    }
-}
-
-function Copy-SolutionPackagesToRepository {
-    param (
-        [array]$Definitions,
-        [string]$SourceRoot,
-        [string]$DestinationRoot
-    )
-
-    foreach ($definition in $Definitions) {
-        foreach ($package in $definition.Packages) {
-            $sourcePath = Join-Path -Path $SourceRoot -ChildPath $package.Path
-            $destinationPath = Join-Path -Path $DestinationRoot -ChildPath $package.Path
-            if (-not (Test-Path -Path $sourcePath)) {
-                throw "Expected isolated package was not found: '$sourcePath'."
-            }
-
-            New-Item -ItemType Directory -Path (Split-Path -Path $destinationPath -Parent) -Force > $null
-            Copy-Item -Path $sourcePath -Destination $destinationPath -Force
-            Write-Host "Copied '$sourcePath' to '$destinationPath'" -ForegroundColor Green
-        }
-    }
-}
 
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
@@ -93,14 +30,29 @@ if ($Clean -and $UseExistingPackages) {
 $selectedDefinitions = @(Resolve-SolutionPackageDefinitions -Solution $Solution)
 $buildRepoRoot = $repoRoot
 $isolatedWorkspaceRoot = $null
+$isolatedCacheRoot = $null
+$isolatedRootDrive = Get-LargestFreeFileSystemRoot
+$isolatedCacheRoot = Join-Path -Path $isolatedRootDrive -ChildPath 'cre-build-cache'
+
+if ($CleanIsolatedCache) {
+    Write-Host "Isolated node_modules cache root: $isolatedCacheRoot" -ForegroundColor Cyan
+    Clear-IsolatedNodeModuleCache -CacheRoot $isolatedCacheRoot
+    if (-not $IsolatedWorkspace) {
+        return
+    }
+}
 
 if ($IsolatedWorkspace) {
     if ($UseExistingPackages -or $VerifyOnly) {
         throw 'Do not combine -IsolatedWorkspace with -UseExistingPackages or -VerifyOnly.'
     }
 
-    $isolatedWorkspaceRoot = "C:\cre-build-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $isolatedWorkspaceRoot = Join-Path -Path $isolatedRootDrive -ChildPath "cre-build-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+    Write-Host "Isolated workspace root: $isolatedWorkspaceRoot" -ForegroundColor Cyan
+    Write-Host "Isolated node_modules cache root: $isolatedCacheRoot" -ForegroundColor Cyan
+
     Copy-RepositoryToIsolatedWorkspace -SourceRoot $repoRoot -DestinationRoot $isolatedWorkspaceRoot
+    Restore-IsolatedNodeModuleCache -Definitions $selectedDefinitions -CacheRoot $isolatedCacheRoot -WorkspaceRoot $isolatedWorkspaceRoot
     $buildRepoRoot = $isolatedWorkspaceRoot
 }
 
@@ -135,12 +87,13 @@ try {
     }
 
     if ($IsolatedWorkspace) {
+        Save-IsolatedNodeModuleCache -Definitions $selectedDefinitions -CacheRoot $isolatedCacheRoot -WorkspaceRoot $buildRepoRoot
         Copy-SolutionPackagesToRepository -Definitions $selectedDefinitions -SourceRoot $buildRepoRoot -DestinationRoot $repoRoot
     }
 }
 finally {
     if ($IsolatedWorkspace -and -not [string]::IsNullOrWhiteSpace($isolatedWorkspaceRoot) -and (Test-Path -Path $isolatedWorkspaceRoot)) {
-        Remove-Item -Path $isolatedWorkspaceRoot -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-IsolatedOwnedPath -Path $isolatedWorkspaceRoot -Purpose 'isolated workspace' > $null
     }
 }
 
