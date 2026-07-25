@@ -103,12 +103,14 @@ if ($PSCmdlet.ShouldProcess($Repository, 'publish solution releases')) {
         Set-SolutionVersion -SolutionXmlPath $release.SolutionXmlPath -Version $release.NextVersion
     }
 
-    $buildArguments = @('-Solution') + @($releasePlan.BuildSolution)
+    $buildArguments = @{
+        Solution = @($releasePlan.BuildSolution)
+    }
     if ($Clean) {
-        $buildArguments += '-Clean'
+        $buildArguments.Clean = $true
     }
     if ($CleanNodeModules) {
-        $buildArguments += '-CleanNodeModules'
+        $buildArguments.CleanNodeModules = $true
     }
 
     Invoke-ExternalCommand -CommandDescription 'Build release packages' -ScriptBlock {
