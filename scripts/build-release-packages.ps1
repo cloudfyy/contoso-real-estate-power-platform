@@ -3,9 +3,10 @@
 param (
     [ValidateSet('Controls', 'Core', 'Portal', 'All')]
     [string[]]$Solution = @('All'),
-    [switch]$SkipProjectReferences,
     [switch]$UseExistingPackages,
-    [switch]$VerifyOnly
+    [switch]$VerifyOnly,
+    [switch]$Clean,
+    [switch]$CleanNodeModules
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,14 +35,10 @@ function Get-SolutionVersion {
 
 function Invoke-DotNetBuild {
     param (
-        [string]$ProjectPath,
-        [switch]$SkipReferences
+        [string]$ProjectPath
     )
 
     $arguments = @('build', '-c', 'Release', $ProjectPath)
-    if ($SkipReferences) {
-        $arguments += '/p:BuildProjectReferences=false'
-    }
 
     Write-Host "dotnet $($arguments -join ' ')" -ForegroundColor Cyan
     & dotnet @arguments
@@ -50,42 +47,38 @@ function Invoke-DotNetBuild {
     }
 }
 
-function Repair-PortalReactUiManifest {
+function Remove-PathIfExists {
     param (
-        [string]$RepoRoot
+        [string]$Path
     )
 
-    $sourceManifestPath = Join-Path -Path $RepoRoot -ChildPath 'src\portal\PortalReactUI\PortalReactUI\ControlManifest.Input.xml'
-    $outputControlPath = Join-Path -Path $RepoRoot -ChildPath 'src\portal\PortalReactUI\out\controls\PortalReactUI'
-    $outputBundlePath = Join-Path -Path $outputControlPath -ChildPath 'bundle.js'
-    $outputManifestPath = Join-Path -Path $outputControlPath -ChildPath 'ControlManifest.xml'
-
-    if (Test-Path -Path $outputManifestPath) {
-        return
+    if (Test-Path -Path $Path) {
+        Write-Host "Removing '$Path'" -ForegroundColor Yellow
+        try {
+            Remove-Item -Path $Path -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Host "Unable to fully remove '$Path'. Continuing. $($_.Exception.Message)" -ForegroundColor Yellow
+        }
     }
-
-    if (-not (Test-Path -Path $outputBundlePath)) {
-        throw "PortalReactUI bundle was not found at '$outputBundlePath'. Build PortalReactUI before packaging with -SkipProjectReferences."
-    }
-
-    if (-not (Test-Path -Path $sourceManifestPath)) {
-        throw "PortalReactUI source manifest was not found at '$sourceManifestPath'."
-    }
-
-    Write-Host "PortalReactUI output manifest is missing. Copying ControlManifest.Input.xml to '$outputManifestPath'." -ForegroundColor Yellow
-    Copy-Item -Path $sourceManifestPath -Destination $outputManifestPath -Force
 }
 
-function Test-PortalManifestError {
+function Clear-SolutionBuildOutputs {
     param (
-        [string]$RepoRoot
+        [hashtable]$Definition,
+        [string]$RepoRoot,
+        [switch]$IncludeNodeModules
     )
 
-    $outputControlPath = Join-Path -Path $RepoRoot -ChildPath 'src\portal\PortalReactUI\out\controls\PortalReactUI'
-    $outputBundlePath = Join-Path -Path $outputControlPath -ChildPath 'bundle.js'
-    $outputManifestPath = Join-Path -Path $outputControlPath -ChildPath 'ControlManifest.xml'
+    foreach ($relativePath in $Definition.CleanPaths) {
+        Remove-PathIfExists -Path (Join-Path -Path $RepoRoot -ChildPath $relativePath)
+    }
 
-    return (Test-Path -Path $outputBundlePath) -and -not (Test-Path -Path $outputManifestPath)
+    if ($IncludeNodeModules) {
+        foreach ($relativePath in $Definition.NodeModulePaths) {
+            Remove-PathIfExists -Path (Join-Path -Path $RepoRoot -ChildPath $relativePath)
+        }
+    }
 }
 
 function Test-SolutionPackage {
@@ -149,7 +142,6 @@ function Invoke-SolutionBuild {
     param (
         [hashtable]$Definition,
         [string]$RepoRoot,
-        [switch]$SkipReferences,
         [switch]$UseExistingPackages,
         [switch]$VerifyOnly
     )
@@ -179,24 +171,7 @@ function Invoke-SolutionBuild {
     }
 
     if (-not $VerifyOnly) {
-        if ($Definition.Name -eq 'Portal' -and $SkipReferences) {
-            Repair-PortalReactUiManifest -RepoRoot $RepoRoot
-        }
-
-        try {
-            Invoke-DotNetBuild -ProjectPath $projectPath -SkipReferences:$SkipReferences
-        }
-        catch {
-            if ($Definition.Name -eq 'Portal' -and -not $SkipReferences -and (Test-PortalManifestError -RepoRoot $RepoRoot)) {
-                Write-Host $_.Exception.Message -ForegroundColor Yellow
-                Repair-PortalReactUiManifest -RepoRoot $RepoRoot
-                Write-Host 'Retrying portal solution packaging without rebuilding project references.' -ForegroundColor Yellow
-                Invoke-DotNetBuild -ProjectPath $projectPath -SkipReferences
-            }
-            else {
-                throw
-            }
-        }
+        Invoke-DotNetBuild -ProjectPath $projectPath
     }
 
     foreach ($package in $Definition.Packages) {
@@ -213,6 +188,15 @@ function Invoke-SolutionBuild {
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
 
+if ($VerifyOnly -and ($Clean -or $CleanNodeModules)) {
+    throw 'Do not combine -VerifyOnly with -Clean or -CleanNodeModules.'
+}
+
+if ($Clean -and $UseExistingPackages) {
+    Write-Host '-Clean was specified, so -UseExistingPackages will be ignored.' -ForegroundColor Yellow
+    $UseExistingPackages = $false
+}
+
 $definitions = @(
     @{
         Name = 'Controls'
@@ -227,6 +211,16 @@ $definitions = @(
             @{ Path = 'src\controls\solution\ContosoRealEstateCustomControls\bin\ContosoRealEstateCustomControls.zip'; Managed = 0 },
             @{ Path = 'src\controls\solution\ContosoRealEstateCustomControls\bin\ContosoRealEstateCustomControls_managed.zip'; Managed = 1 }
         )
+        CleanPaths = @(
+            'src\controls\solution\ContosoRealEstateCustomControls\bin',
+            'src\controls\solution\ContosoRealEstateCustomControls\obj',
+            'src\controls\image-grid-pcf\bin',
+            'src\controls\image-grid-pcf\obj',
+            'src\controls\image-grid-pcf\out'
+        )
+        NodeModulePaths = @(
+            'src\controls\image-grid-pcf\node_modules'
+        )
     },
     @{
         Name = 'Core'
@@ -240,6 +234,24 @@ $definitions = @(
         Packages = @(
             @{ Path = 'src\core\solution\ContosoRealEstateCore\bin\ContosoRealEstateCore.zip'; Managed = 0 },
             @{ Path = 'src\core\solution\ContosoRealEstateCore\bin\ContosoRealEstateCore_managed.zip'; Managed = 1 }
+        )
+        CleanPaths = @(
+            'src\core\solution\ContosoRealEstateCore\bin',
+            'src\core\solution\ContosoRealEstateCore\obj',
+            'src\core\solution\ContosoRealEstateCore\Metadata',
+            'src\core\solution\ContosoRealEstateCore\SolutionPackager',
+            'src\core\solution\ContosoRealEstateCore\SolutionPackagerLogs',
+            'src\core\plugins\business-logic\ContosoRealEstateBusinessLogic\bin',
+            'src\core\plugins\business-logic\ContosoRealEstateBusinessLogic\obj',
+            'src\core\plugins\payments-virtual-table-provider\PaymentVirtualTableProvider\bin',
+            'src\core\plugins\payments-virtual-table-provider\PaymentVirtualTableProvider\obj',
+            'src\core\mda-client-hooks\dist',
+            'src\core\mda-client-hooks\node_modules\.package-lock.stamp',
+            'src\core\mda-client-hooks\node_modules\.webpack-build.Debug.stamp',
+            'src\core\mda-client-hooks\node_modules\.webpack-build.Release.stamp'
+        )
+        NodeModulePaths = @(
+            'src\core\mda-client-hooks\node_modules'
         )
     },
     @{
@@ -256,10 +268,30 @@ $definitions = @(
             @{ Path = 'src\portal\solution\ContosoRealEstatePortal\bin\ContosoRealEstatePortal.zip'; Managed = 0 },
             @{ Path = 'src\portal\solution\ContosoRealEstatePortal\bin\ContosoRealEstatePortal_managed.zip'; Managed = 1 }
         )
+        CleanPaths = @(
+            'src\portal\solution\ContosoRealEstatePortal\bin',
+            'src\portal\solution\ContosoRealEstatePortal\obj',
+            'src\portal\solution\ContosoRealEstatePortal\Metadata',
+            'src\portal\solution\ContosoRealEstatePortal\SolutionPackager',
+            'src\portal\solution\ContosoRealEstatePortal\SolutionPackagerLogs',
+            'src\portal\PortalReactUI\bin',
+            'src\portal\PortalReactUI\obj',
+            'src\portal\PortalReactUI\out',
+            'src\portal\portal-react-ui\dist',
+            'src\portal\portal-react-ui\node_modules\.package-lock.stamp',
+            'src\portal\portal-react-ui\node_modules\.webpack-build.Debug.stamp',
+            'src\portal\portal-react-ui\node_modules\.webpack-build.Release.stamp'
+        )
+        NodeModulePaths = @(
+            'src\portal\PortalReactUI\node_modules',
+            'src\portal\portal-react-ui\node_modules'
+        )
     }
 )
 
 $selectedSolutions = if ($Solution -contains 'All') { @('Controls', 'Core', 'Portal') } else { $Solution }
+$solutionTimings = @()
+$totalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 foreach ($solutionName in $selectedSolutions) {
     $definition = $definitions | Where-Object { $_.Name -eq $solutionName } | Select-Object -First 1
@@ -268,12 +300,33 @@ foreach ($solutionName in $selectedSolutions) {
     }
 
     Write-Host "`n== $solutionName ==" -ForegroundColor White
-    Invoke-SolutionBuild `
-        -Definition $definition `
-        -RepoRoot $repoRoot `
-        -SkipReferences:$SkipProjectReferences `
-        -UseExistingPackages:$UseExistingPackages `
-        -VerifyOnly:$VerifyOnly
+    $solutionStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        if ($Clean -or $CleanNodeModules) {
+            Clear-SolutionBuildOutputs `
+                -Definition $definition `
+                -RepoRoot $repoRoot `
+                -IncludeNodeModules:$CleanNodeModules
+        }
+
+        Invoke-SolutionBuild `
+            -Definition $definition `
+            -RepoRoot $repoRoot `
+            -UseExistingPackages:$UseExistingPackages `
+            -VerifyOnly:$VerifyOnly
+    }
+    finally {
+        $solutionStopwatch.Stop()
+        $solutionTimings += [PSCustomObject]@{
+            Solution = $solutionName
+            Seconds = [math]::Round($solutionStopwatch.Elapsed.TotalSeconds, 2)
+        }
+    }
 }
 
+$totalStopwatch.Stop()
+
+Write-Host "`nBuild timing summary" -ForegroundColor White
+$solutionTimings | Format-Table -AutoSize
+Write-Host ("Total: {0:n2} seconds" -f $totalStopwatch.Elapsed.TotalSeconds) -ForegroundColor Green
 Write-Host "`nSolution package build complete." -ForegroundColor Green

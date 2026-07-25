@@ -6,7 +6,12 @@
 
   <PropertyGroup>
     <NodeModulesStamp>node_modules\.package-lock.stamp</NodeModulesStamp>
+    <WebpackBuildStamp>node_modules\.webpack-build.$(Configuration).stamp</WebpackBuildStamp>
   </PropertyGroup>
+
+  <ItemGroup>
+    <WebpackBuildInput Include="src\**\*;webpack.config.js;tsconfig.json;package.json;package-lock.json;$(NodeModulesStamp)" />
+  </ItemGroup>
 
   <!-- Prevent Csc from being called -->
   <Target Name="CoreCompile" />
@@ -19,9 +24,12 @@
     <Touch Files="$(NodeModulesStamp)" AlwaysCreate="true" />
   </Target>
 
-  <Target Name="Build" DependsOnTargets="RestoreNodeModules" AfterTargets="GetProjectOutputPath" Inputs="src\**\*;webpack.config.js;tsconfig.json;package.json;package-lock.json;$(NodeModulesStamp)" Outputs="dist\ClientHooks.js">
+  <Target Name="Build" DependsOnTargets="RestoreNodeModules;BuildWebpack" AfterTargets="GetProjectOutputPath" />
+
+  <Target Name="BuildWebpack" Inputs="@(WebpackBuildInput)" Outputs="$(WebpackBuildStamp)">
     <Exec Command="npm run build:dev " Condition="'$(Configuration)' == 'Debug'"/>
     <Exec Command="npm run build:prod" Condition="'$(Configuration)' == 'Release'"/>
+    <Touch Files="$(WebpackBuildStamp)" AlwaysCreate="true" />
   </Target>
 
 </Project>

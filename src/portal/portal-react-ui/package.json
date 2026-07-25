@@ -6,13 +6,14 @@
   "scripts": {
     "build": "webpack --mode=production --define-process-env-node-env=production --config webpack.config.js",
     "build:dev": "npm run lint & webpack --mode=development --config webpack.config.js & npm run test",
-    "build:prod": "npm run lint & webpack --mode=production --config webpack.config.js --define-process-env-node-env=production & npm run test",
+    "build:prod": "webpack --mode=production --config webpack.config.js --define-process-env-node-env=production",
     "start": "webpack server --open",
     "start:proxy": "webpack server --open --allowed-hosts all",
     "dev": "npm-run-all -s build start",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "npm run lint -- --fix",
-    "test": "jest unit. --collectCoverage"
+    "test": "jest unit. --collectCoverage",
+    "validate": "npm run lint && npm run test"
   },
   "keywords": [],
   "author": "",

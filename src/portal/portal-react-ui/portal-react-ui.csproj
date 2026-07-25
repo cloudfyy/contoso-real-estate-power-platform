@@ -4,17 +4,32 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <NodeModulesStamp>node_modules\.package-lock.stamp</NodeModulesStamp>
+    <WebpackBuildStamp>node_modules\.webpack-build.$(Configuration).stamp</WebpackBuildStamp>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <WebpackBuildInput Include="src\**\*;webpack.config.js;tsconfig.json;package.json;package-lock.json;$(NodeModulesStamp)" />
+  </ItemGroup>
+
   <!-- Prevent Csc from being called -->
   <Target Name="CoreCompile" />
   <Target Name="GetProjectOutputPath"/>
   <Target Name="CopyFilesToOutputDirectory"/>
   
 
-  <Target Name="Build" AfterTargets="GetProjectOutputPath">
-    <Exec Command="npm ci" Condition="'$(Configuration)' == 'Debug'"/>
-    <Exec Command="npm install" Condition="'$(Configuration)' == 'Release'"/>
+  <Target Name="RestoreNodeModules" Inputs="package.json;package-lock.json" Outputs="$(NodeModulesStamp)">
+    <Exec Command="npm ci" />
+    <Touch Files="$(NodeModulesStamp)" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="Build" DependsOnTargets="RestoreNodeModules;BuildWebpack" AfterTargets="GetProjectOutputPath" />
+
+  <Target Name="BuildWebpack" Inputs="@(WebpackBuildInput)" Outputs="$(WebpackBuildStamp)">
     <Exec Command="npm run build:dev " Condition="'$(Configuration)' == 'Debug'"/>
     <Exec Command="npm run build:prod" Condition="'$(Configuration)' == 'Release'"/>
+    <Touch Files="$(WebpackBuildStamp)" AlwaysCreate="true" />
   </Target>
 
 </Project>

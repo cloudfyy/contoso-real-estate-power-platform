@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Project containing your PowerApps Component Framework (PCF) control.",
   "scripts": {
-    "build": "npm run lint & npm run test & pcf-scripts build",
+    "build": "pcf-scripts build",
     "clean": "pcf-scripts clean",
     "lint": "eslint PortalReactUI --ext .ts,.tsx",
     "lint:fix": "npm run lint -- --fix",
@@ -11,7 +11,8 @@
     "start": "pcf-scripts start",
     "start:watch": "pcf-scripts start watch",
     "refreshTypes": "pcf-scripts refreshTypes",
-    "test": "jest unit. --collectCoverage"
+    "test": "jest unit. --collectCoverage",
+    "validate": "npm run lint && npm run test"
   },
   "dependencies": {
     "dataverse-ify": "^2.0.7",
