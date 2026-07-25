@@ -9,6 +9,7 @@ param (
     [string]$Branch = 'main',
     [switch]$Clean,
     [switch]$CleanNodeModules,
+    [switch]$IsolatedWorkspace,
     [switch]$SkipPush
 )
 
@@ -115,6 +116,9 @@ if ($PSCmdlet.ShouldProcess($Repository, 'publish solution releases')) {
         }
         if ($CleanNodeModules) {
             $buildArguments.CleanNodeModules = $true
+        }
+        if ($IsolatedWorkspace) {
+            $buildArguments.IsolatedWorkspace = $true
         }
 
         Invoke-ExternalCommand -CommandDescription 'Build release packages' -ScriptBlock {
