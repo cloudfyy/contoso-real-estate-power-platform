@@ -274,3 +274,134 @@ function Test-SolutionPackage {
         $zip.Dispose()
     }
 }
+
+function Invoke-DotNetBuild {
+    param (
+        [string]$ProjectPath,
+        [int]$MaxAttempts = 5
+    )
+
+    $arguments = @('build', '-c', 'Release', $ProjectPath)
+    $solutionFolder = Split-Path -Path $ProjectPath -Parent
+
+    Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        Write-Host "dotnet $($arguments -join ' ') (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
+        & dotnet @arguments
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        if ($attempt -ge $MaxAttempts) {
+            throw "Build failed for '$ProjectPath' after $MaxAttempts attempts."
+        }
+
+        Write-Host "Build failed for '$ProjectPath'. Cleaning transient solution packaging folders before retrying." -ForegroundColor Yellow
+        Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
+        Start-Sleep -Seconds 3
+    }
+}
+
+function Remove-PathIfExists {
+    param (
+        [string]$Path,
+        [int]$MaxAttempts = 5
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if (-not (Test-Path -Path $Path)) {
+            return
+        }
+
+        try {
+            Write-Host "Removing '$Path' (attempt $attempt/$MaxAttempts)" -ForegroundColor Yellow
+            Remove-Item -Path $Path -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -ge $MaxAttempts) {
+                Write-Host "Unable to fully remove '$Path'. Continuing. $($_.Exception.Message)" -ForegroundColor Yellow
+                return
+            }
+
+            Write-Host "Unable to remove '$Path'. Retrying after a short delay. $($_.Exception.Message)" -ForegroundColor Yellow
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
+function Clear-SolutionPackageTransientFolders {
+    param (
+        [string]$SolutionFolder
+    )
+
+    @('Metadata', 'SolutionPackager', 'SolutionPackagerLogs', 'obj') | ForEach-Object {
+        Remove-PathIfExists -Path (Join-Path -Path $SolutionFolder -ChildPath $_)
+    }
+}
+
+function Clear-SolutionBuildOutputs {
+    param (
+        [hashtable]$Definition,
+        [string]$RepoRoot,
+        [switch]$IncludeNodeModules
+    )
+
+    foreach ($relativePath in $Definition.CleanPaths) {
+        Remove-PathIfExists -Path (Join-Path -Path $RepoRoot -ChildPath $relativePath)
+    }
+
+    if ($IncludeNodeModules) {
+        foreach ($relativePath in $Definition.NodeModulePaths) {
+            Remove-PathIfExists -Path (Join-Path -Path $RepoRoot -ChildPath $relativePath)
+        }
+    }
+}
+
+function Invoke-SolutionBuild {
+    param (
+        [hashtable]$Definition,
+        [string]$RepoRoot,
+        [switch]$UseExistingPackages,
+        [switch]$VerifyOnly
+    )
+
+    $projectPath = Join-Path -Path $RepoRoot -ChildPath $Definition.ProjectPath
+    $solutionXmlPath = Join-Path -Path $RepoRoot -ChildPath $Definition.SolutionXmlPath
+    $version = Get-SolutionVersion -SolutionXmlPath $solutionXmlPath
+
+    if ($UseExistingPackages -and -not $VerifyOnly) {
+        try {
+            foreach ($package in $Definition.Packages) {
+                $packagePath = Join-Path -Path $RepoRoot -ChildPath $package.Path
+                Test-SolutionPackage `
+                    -PackagePath $packagePath `
+                    -ExpectedUniqueName $Definition.UniqueName `
+                    -ExpectedVersion $version `
+                    -ExpectedManaged $package.Managed `
+                    -RequiredEntries $Definition.RequiredEntries
+            }
+
+            Write-Host "Existing $($Definition.Name) packages are valid. Skipping build." -ForegroundColor Green
+            return
+        }
+        catch {
+            Write-Host "Existing $($Definition.Name) packages are missing or invalid. Rebuilding. $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    if (-not $VerifyOnly) {
+        Invoke-DotNetBuild -ProjectPath $projectPath
+    }
+
+    foreach ($package in $Definition.Packages) {
+        $packagePath = Join-Path -Path $RepoRoot -ChildPath $package.Path
+        Test-SolutionPackage `
+            -PackagePath $packagePath `
+            -ExpectedUniqueName $Definition.UniqueName `
+            -ExpectedVersion $version `
+            -ExpectedManaged $package.Managed `
+            -RequiredEntries $Definition.RequiredEntries
+    }
+}
