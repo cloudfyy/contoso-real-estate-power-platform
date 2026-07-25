@@ -6,6 +6,22 @@ param (
     [bool]$skipLoginChecks
 )
 
+function AssertSolutionImported {
+    param (
+        [string]$SolutionUniqueName
+    )
+
+    $solutionsJson = pac solution list --json
+    if ([string]::IsNullOrWhiteSpace($solutionsJson)) {
+        throw "Could not read Power Platform solutions for the current environment. Check that PAC CLI is authenticated to the target environment."
+    }
+
+    $solutions = $solutionsJson | ConvertFrom-Json
+    $solution = $solutions | Where-Object { $_.SolutionUniqueName -eq $SolutionUniqueName } | Select-Object -First 1
+    if ($null -eq $solution) {
+        throw "Solution '$SolutionUniqueName' is not imported in the current Power Platform environment. Run src\core\solution\deployment-scripts\1-deploy-to-development-environment.ps1 first and answer Y at the deployment confirmation prompt, then rerun this script."
+    }
+}
 
 function SetRedirectUrl {
 
@@ -56,12 +72,11 @@ function FixCustomConnector {
     Write-Host "1. Open the [$connectorName] custom connector "
     Write-Host $customConnectorUrl -ForegroundColor Blue
     Write-Host ""
-    Write-host "2. Copy the 'Redirect URL'"
-    #Write-Host "3. Select Edit below the 'Redirect Url' field. This is a work around because SPN authentication does not currently support environment variables."
-    #Write-Host "4. Update the following fields"
-    #Write-Host "    Client Secret = @environmentVariables(""contoso_PaymentsApiSecret"")" -ForegroundColor Blue
-    #Write-Host "    Resource Url = api://$apiAppId" -ForegroundColor Blue
-    #Write-Host "5. Click 'Update Connector'."
+    Write-Host "2. Edit the connector security settings and paste the Payments API client secret as the OAuth client secret." -ForegroundColor Yellow
+    Write-Host "   To display the secret, run this from the repository root:" -ForegroundColor Yellow
+    Write-Host "   .\infra\scripts\show-payments-api-client-secret.ps1 -azureEnv $azureEnv" -ForegroundColor Blue
+    Write-Host ""
+    Write-host "3. Copy the 'Redirect URL'"
     SetRedirectUrl
     Write-Host ""
 }
@@ -80,6 +95,8 @@ if (-not $skipLoginChecks) {
 
 $environmentDetails = pac env who --json | ConvertFrom-Json
 $environmentId = $environmentDetails.EnvironmentId
+
+AssertSolutionImported -SolutionUniqueName 'ContosoRealEstateCore'
 
 FixCustomConnector -connectorName "Contoso Payments API" -environmentId $environmentId -apiAppId $envVars.ENTRA_API_APP_ID
 FixCustomConnector -connectorName "Contoso Stripe API" -environmentId $environmentId -apiAppId $envVars.ENTRA_API_APP_ID

@@ -59,11 +59,7 @@ $envVars = GetEnvironmentVariables -azureEnv $azureEnv
 $solutionPrefix = 'contoso'
 $apiAppName = 'PaymentsApi'
 $tenantId = $envVars.AZURE_TENANT_ID
-$subscriptionId = $envVars.AZURE_SUBSCRIPTION_ID
 $appHostUrl = $envVars.SERVICE_API_URI.TrimStart("https://")
-$keyVaultResourceGroup = $envVars.AZURE_RESOURCE_PREFIX
-$keyVaultName = $envVars.AZURE_KEY_VAULT_NAME
-$vaultSecretName = $envVars.AZURE_KEY_VAULT_ENTRA_API_SECRET_NAME
 $app = $envVars.ENTRA_API_CLIENT_APP_ID
 $appResourceUri = $envVars.SERVICE_API_RESOURCE_URI
 $apiUserAccessScope = "user_impersonation"
@@ -71,7 +67,6 @@ $apiUserAccessScope = "user_impersonation"
 # Environment variable names
 $tenantIdEnvVarName = "${solutionPrefix}_${apiAppName}TenantId";
 $appIdEnvVarName = "${solutionPrefix}_${apiAppName}AppId";
-$secretEnvVarName = "${solutionPrefix}_${apiAppName}Secret";
 $resourceUrlEnvVarName = "${solutionPrefix}_${apiAppName}ResourceUrl";
 $scopeEnvVarName = "${solutionPrefix}_${apiAppName}Scope";
 $hostEnvVarName = "${solutionPrefix}_${apiAppName}Host";
@@ -89,13 +84,6 @@ $pfxScript += GetUpsertEnvironmentVariablePfx `
     -displayName:"${apiAppName} AppId" `
     -type:"String" `
     -value:$app
-
-$secretValue = "/subscriptions/${subscriptionId}/resourceGroups/${keyVaultResourceGroup}/providers/Microsoft.KeyVault/vaults/${keyVaultName}/secrets/${vaultSecretName}"
-$pfxScript += GetUpsertEnvironmentVariablePfx `
-    -schemaName:$secretEnvVarName `
-    -displayName:"${apiAppName} Secret" `
-    -type:"Secret" `
-    -value:"${secretValue}"
     
 $pfxScript += GetUpsertEnvironmentVariablePfx `
     -schemaName:$resourceUrlEnvVarName `
