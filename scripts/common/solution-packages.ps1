@@ -283,9 +283,7 @@ function Invoke-DotNetBuild {
     $arguments = @('build', '-c', 'Release', $ProjectPath)
 
     Write-Host "dotnet $($arguments -join ' ')" -ForegroundColor Cyan
-    $buildOutput = @()
-    & dotnet @arguments 2>&1 | Tee-Object -Variable buildOutput
-    $script:LastDotNetBuildOutput = @($buildOutput | ForEach-Object { [string]$_ })
+    & dotnet @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Build failed for '$ProjectPath'."
     }
@@ -338,148 +336,6 @@ function Clear-SolutionPackageTransientFolders {
     @('Metadata', 'SolutionPackager', 'SolutionPackagerLogs', 'obj') | ForEach-Object {
         Remove-PathIfExists -Path (Join-Path -Path $SolutionFolder -ChildPath $_)
     }
-}
-
-function Get-HandleToolPath {
-    $repoRoot = Get-RepositoryRoot
-    $toolRoot = Join-Path -Path $repoRoot -ChildPath 'temp_tools\sysinternals'
-    $handlePath = Join-Path -Path $toolRoot -ChildPath 'handle64.exe'
-    if (Test-Path -Path $handlePath) {
-        Initialize-HandleTool -HandlePath $handlePath
-        return $handlePath
-    }
-
-    New-Item -ItemType Directory -Path $toolRoot -Force > $null
-    $zipPath = Join-Path -Path $toolRoot -ChildPath 'Handle.zip'
-
-    Write-Host "Downloading Sysinternals Handle to '$toolRoot'" -ForegroundColor Yellow
-    Invoke-WebRequest -Uri 'https://download.sysinternals.com/files/Handle.zip' -OutFile $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath $toolRoot -Force
-
-    if (-not (Test-Path -Path $handlePath)) {
-        throw "Sysinternals Handle was not found at '$handlePath' after download."
-    }
-
-    Initialize-HandleTool -HandlePath $handlePath
-    return $handlePath
-}
-
-function Initialize-HandleTool {
-    param (
-        [string]$HandlePath
-    )
-
-    try {
-        Unblock-File -Path $HandlePath -ErrorAction SilentlyContinue
-        $registryPath = 'HKCU:\Software\Sysinternals\Handle'
-        New-Item -Path $registryPath -Force > $null
-        New-ItemProperty -Path $registryPath -Name EulaAccepted -Value 1 -PropertyType DWord -Force > $null
-    }
-    catch {
-        Write-Host "Unable to pre-accept Sysinternals Handle EULA. Continuing with /accepteula. $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-}
-
-function Invoke-HandleTool {
-    param (
-        [string]$HandlePath,
-        [string]$Path,
-        [int]$TimeoutSeconds = 20
-    )
-
-    $job = Start-Job -ScriptBlock {
-        param (
-            [string]$HandlePath,
-            [string]$Path
-        )
-
-        & $HandlePath -accepteula -nobanner $Path 2>&1
-    } -ArgumentList $HandlePath, $Path
-
-    try {
-        $completedJob = Wait-Job -Job $job -Timeout $TimeoutSeconds
-        if ($null -eq $completedJob) {
-            Stop-Job -Job $job -ErrorAction SilentlyContinue
-            Write-Host "Sysinternals Handle did not finish within $TimeoutSeconds seconds for '$Path'. Skipping lock diagnostics for this path." -ForegroundColor Yellow
-            return @()
-        }
-
-        return @(Receive-Job -Job $job)
-    }
-    finally {
-        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Invoke-SolutionPackageLockDiagnostics {
-    param (
-        [string]$SolutionFolder,
-        [string[]]$BuildOutput = @()
-    )
-
-    try {
-        $handlePath = Get-HandleToolPath
-    }
-    catch {
-        Write-Host "Unable to prepare Sysinternals Handle for lock diagnostics. $($_.Exception.Message)" -ForegroundColor Yellow
-        return
-    }
-
-    $paths = @(Get-LockedPathsFromBuildOutput -BuildOutput $BuildOutput)
-    if ($paths.Count -eq 0) {
-        $paths = @('Metadata', 'SolutionPackagerLogs', 'obj') | ForEach-Object {
-            Join-Path -Path $SolutionFolder -ChildPath $_
-        }
-    }
-
-    foreach ($path in $paths) {
-        if (-not (Test-Path -Path $path)) {
-            continue
-        }
-
-        Write-Host "Checking file locks for '$path'" -ForegroundColor Yellow
-        $output = Invoke-HandleTool -HandlePath $handlePath -Path $path
-        if ([string]::IsNullOrWhiteSpace(($output | Out-String))) {
-            Write-Host "No open handles reported for '$path'." -ForegroundColor Yellow
-            continue
-        }
-
-        $output | Select-Object -First 80 | ForEach-Object {
-            Write-Host $_ -ForegroundColor Yellow
-        }
-    }
-}
-
-function Get-LockedPathsFromBuildOutput {
-    param (
-        [string[]]$BuildOutput
-    )
-
-    $lockedFilePaths = New-Object System.Collections.Generic.List[string]
-    $lockedDirectoryPaths = New-Object System.Collections.Generic.List[string]
-    foreach ($line in $BuildOutput) {
-        if ($line -match "The process cannot access the file '([^']+)'") {
-            $lockedFilePaths.Add((Normalize-WindowsPath -Path $matches[1]))
-        }
-
-        if ($line -match 'Unable to remove directory "([^"]+)"') {
-            $lockedDirectoryPaths.Add((Normalize-WindowsPath -Path $matches[1]))
-        }
-    }
-
-    if ($lockedFilePaths.Count -gt 0) {
-        return $lockedFilePaths | Select-Object -Unique
-    }
-
-    $lockedDirectoryPaths | Select-Object -Unique
-}
-
-function Normalize-WindowsPath {
-    param (
-        [string]$Path
-    )
-
-    return $Path -replace '^\\\\\?\\', ''
 }
 
 function Clear-SolutionBuildOutputs {
@@ -560,7 +416,6 @@ function Invoke-SolutionBuild {
             }
 
             Write-Host "Build attempt $attempt/$MaxAttempts failed for $($Definition.Name). $($_.Exception.Message)" -ForegroundColor Yellow
-            Invoke-SolutionPackageLockDiagnostics -SolutionFolder $solutionFolder -BuildOutput $script:LastDotNetBuildOutput
             Clear-SolutionPackageTransientFolders -SolutionFolder $solutionFolder
 
             $delaySeconds = Get-RetryDelaySeconds -Attempt $attempt
