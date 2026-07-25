@@ -502,7 +502,7 @@ function Restore-IsolatedNodeModuleCache {
             continue
         }
 
-        Write-Host "Restoring isolated node_modules cache '$cachePath' to '$workspacePath'" -ForegroundColor Cyan
+        Write-Host "Syncing isolated node_modules cache from '$cachePath' to '$workspacePath'" -ForegroundColor Cyan
         Invoke-RobocopyMirror -Source $cachePath -Destination $workspacePath
     }
 }
@@ -523,7 +523,7 @@ function Save-IsolatedNodeModuleCache {
             continue
         }
 
-        Write-Host "Updating isolated node_modules cache '$cachePath' from '$workspacePath'" -ForegroundColor Cyan
+        Write-Host "Syncing isolated node_modules cache from '$workspacePath' to '$cachePath'" -ForegroundColor Cyan
         Invoke-RobocopyMirror -Source $workspacePath -Destination $cachePath
     }
 }
