@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <ImportExportXml version="9.2.24101.198" SolutionPackageVersion="9.2" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.24101.198" OrganizationSchemaType="Standard" CRMServerServiceabilityVersion="9.2.24102.00190">
   <SolutionManifest>
     <UniqueName>ContosoRealEstatePortal</UniqueName>
@@ -6,7 +6,7 @@
       <LocalizedName description="Contoso Real Estate Portal" languagecode="1033" />
     </LocalizedNames>
     <Descriptions />
-    <Version>1.0.33.0</Version>
+    <Version>1.0.34.0</Version>
     <Managed>2</Managed>
     <Publisher>
       <UniqueName>ContosoRealEstate</UniqueName>
