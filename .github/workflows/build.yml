@@ -32,6 +32,9 @@ concurrency:
   cancel-in-progress: true
   
 jobs:
+  ValidateAzureApiAndInfrastructure:
+    uses: ./.github/workflows/validate-azure-api.yml
+
   Build:
     # Needs to be windows so that the nuget package inclusion of the .NET Framework will resolve
     runs-on: windows-latest

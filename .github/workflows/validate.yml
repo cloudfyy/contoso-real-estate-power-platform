@@ -11,6 +11,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  validateAzureApiAndInfrastructure:
+    uses: ./.github/workflows/validate-azure-api.yml
+
   build:
     # Needs to be windows for nuget package inclusion of the .NET Framework
     runs-on: windows-latest
