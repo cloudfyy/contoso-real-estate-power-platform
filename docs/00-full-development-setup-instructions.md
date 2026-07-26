@@ -739,37 +739,51 @@ Important: create these connections in the same Power Platform environment where
 
 1. Select the Contoso Real Estate Portal. This will take you to Power Pages.
 
+   ![Contoso Real Estate Portal Site](./assets/activate-power-pages-site.png)
+
 1. You will see a message **Website Not found** since the web site is not yet created.
+
+   ![Web Site Not Found](./assets/power-apps-web-not-found.png)
 
 1. Select **Go Home.**
 
 1. Navigate to **Inactive Sites**.
 
+   ![Inactive Site](./assets/inactive-site.png)
+
 1. Locate the **Contoso Real Estate Portal**, and select **Reactivate**.
 
 1. Append the environment name to the website name (for ease of identification)
 
-1. Enter a website address that references your environment - e.g `cre-my-developer-environment`
+1. Enter a website address that references your environment - e.g `cre-my-developer-environment`, and record the full Web site Url (for example, `https://cre-my-developer-environment.powerappsportals.com/`) for the next steps.
 
 1. Select **Done**
 
 1. Open the solution in [make.powerapps.com](https://make.powerapps.com/)
 
 1. Select **Environment Variables** -> **Contoso Real Estate Portal Url**
-
-1. Select **+ New Value**, and enter the Url of your new site (e.g. https://cre-my-developer-environment.powerappsportals.com/) -> **Save**.
+   ![Environment Variables](./assets/env-variables.png)
+1. Select the existing value for **Contoso Real Estate Portal Url**, update it to your new site Url (e.g. https://cre-my-developer-environment.powerappsportals.com/), and select **Save**.
 > [!NOTE] 
 > This is used by the Copilot Studio Copilot to search the site.
 13. Wait for the portal to finish being created.
 
 ### ⚡Setup cloud flow triggers
 
-When flows that are added to power pages are deployed, the trigger is not updated to match the target environment. For this reason, they must be manually re-configured. This creates unfortunately creates an unmanaged layer:
+When flows that are added to Power Pages are deployed, the trigger is not always updated to match the target environment. For this reason, they must be manually re-configured. This creates an unmanaged layer:
 
-1. Open your site in [Power Pages](https://make.powerpages.microsoft.com/)
-1. Select  **Set Up** -> **Integrations** -> **Cloud Flows**
-1. For each flow in the site, select the **Register Flow** icon.
+1. Open your site in [Power Pages](https://make.powerpages.microsoft.com/).
+1. In the site editor, select **Set up** -> **Integrations** -> **Cloud flows**.
+1. For each flow in the site, select **Register flow**.
 1. Power Pages will re-configure the trigger to point at the cloud flow in the current environment.
+
+> [!TIP]
+> If you cannot find **Set up** -> **Integrations** -> **Cloud flows** in your current UI:
+> 1. Open [make.powerapps.com](https://make.powerapps.com/) and go to the `Contoso Real Estate Portal` solution.
+> 1. Open **Cloud flows** in the solution.
+> 1. For each related flow, select **Edit**, then **Save** (no changes required).
+>
+> This also refreshes the trigger bindings for the current environment.
 
 ### 🤖Publish Chatbot
 

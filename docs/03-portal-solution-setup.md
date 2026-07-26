@@ -221,13 +221,20 @@ NOTE: This is used by the Copilot Studio Copilot to search the site.
 
 ### ⚡Setup cloud flow triggers
 
-When flows that are added to power pages are deployed, the trigger is not updated to match the target environment. For this reason, they must be manually re-configured. This creates unfortunately creates an unmanaged layer:
+When flows that are added to Power Pages are deployed, the trigger is not always updated to match the target environment. For this reason, they must be manually re-configured. This creates an unmanaged layer:
 
-1. Open your site in [Power Pages](https://make.powerpages.microsoft.com/)
-1. Select  **Set Up** - **Integrations** - **Cloud Flows**
-1. For each flow in the site, select the **ellipsis ...**
-1. **Edit** - **Save** (without changing anything). 
+1. Open your site in [Power Pages](https://make.powerpages.microsoft.com/).
+1. In the site editor, select **Set up** -> **Integrations** -> **Cloud flows**.
+1. For each flow in the site, select **Register flow**.
 1. Power Pages will re-configure the trigger to point at the cloud flow in the current environment.
+
+> [!TIP]
+> If you cannot find **Set up** -> **Integrations** -> **Cloud flows** in your current UI:
+> 1. Open [make.powerapps.com](https://make.powerapps.com/) and go to the `Contoso Real Estate Portal` solution.
+> 1. Open **Cloud flows** in the solution.
+> 1. For each related flow, select **Edit**, then **Save** (no changes required).
+>
+> This also refreshes the trigger bindings for the current environment.
 
 ### 🤖Publish Chatbot
 
