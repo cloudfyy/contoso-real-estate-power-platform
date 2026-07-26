@@ -46,7 +46,7 @@ The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repo
     -PacDeployEnvUrl 'https://org123.crm.dynamics.com'
 ```
 
-The PAC client application must already be configured as a Power Platform application user. The helper script creates or confirms the GitHub federated credential for the `solution-checker` environment subject: `repo:<owner>/<repo>:environment:solution-checker`.
+The PAC client application must already be configured as a Power Platform application user. The helper script creates or confirms the GitHub federated credentials for the `solution-checker` environment, including the repository slug subject and the ID-qualified subject emitted by GitHub Actions/PAC.
 
 The helper script covers the Build/Validate prerequisites only:
 

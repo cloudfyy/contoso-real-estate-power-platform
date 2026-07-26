@@ -205,44 +205,67 @@ function Add-GitHubEnvironmentFederatedCredential {
         [string]$CredentialName
     )
 
-    $subject = "repo:${Repository}:environment:${EnvironmentName}"
     if ([string]::IsNullOrWhiteSpace($CredentialName)) {
         $CredentialName = "github-$($EnvironmentName -replace '[^A-Za-z0-9-]', '-')"
+    }
+
+    $credentialSubjects = @(
+        [pscustomobject]@{
+            Name = $CredentialName
+            Subject = "repo:${Repository}:environment:${EnvironmentName}"
+        }
+    )
+
+    $repositoryJson = gh api "repos/$Repository" 2>&1
+    AssertCommandSucceeded -CommandDescription "Get GitHub repository metadata for '$Repository'"
+    $repositoryInfo = $repositoryJson | ConvertFrom-Json
+    $owner = [string]$repositoryInfo.owner.login
+    $ownerId = [string]$repositoryInfo.owner.id
+    $repoName = [string]$repositoryInfo.name
+    $repoId = [string]$repositoryInfo.id
+
+    if (-not [string]::IsNullOrWhiteSpace($ownerId) -and -not [string]::IsNullOrWhiteSpace($repoId)) {
+        $credentialSubjects += [pscustomobject]@{
+            Name = "$CredentialName-id"
+            Subject = "repo:${owner}@${ownerId}/${repoName}@${repoId}:environment:${EnvironmentName}"
+        }
     }
 
     $federatedCredentialsJson = az ad app federated-credential list --id $ApplicationId --output json 2>&1
     AssertCommandSucceeded -CommandDescription "List federated credentials for '$ApplicationId'"
 
     $federatedCredentials = @($federatedCredentialsJson | ConvertFrom-Json)
-    $credentialWithSubject = $federatedCredentials | Where-Object { $_.subject -eq $subject } | Select-Object -First 1
-    if ($null -ne $credentialWithSubject) {
-        Write-Host "Federated credential already exists for subject '$subject'." -ForegroundColor Green
-        return
-    }
-
-    $credentialWithName = $federatedCredentials | Where-Object { $_.name -eq $CredentialName } | Select-Object -First 1
-    if ($null -ne $credentialWithName) {
-        throw "Federated credential '$CredentialName' already exists on application '$ApplicationId' but its subject is '$($credentialWithName.subject)', expected '$subject'. Update or remove that credential in Entra ID, then rerun this script."
-    }
-
-    $federatedCredential = [ordered]@{
-        name = $CredentialName
-        issuer = 'https://token.actions.githubusercontent.com'
-        subject = $subject
-        description = "GitHub access for the environment $EnvironmentName and repo $Repository"
-        audiences = @('api://AzureADTokenExchange')
-    }
-    $federatedCredentialJson = $federatedCredential | ConvertTo-Json -Depth 5 -Compress
-    $federatedCredentialPath = Join-Path ([System.IO.Path]::GetTempPath()) "$CredentialName.json"
-    Set-Content -Path $federatedCredentialPath -Value $federatedCredentialJson -Encoding utf8
-
-    try {
-        InvokeExternalCommand -CommandDescription "Create federated credential '$CredentialName'" -ScriptBlock {
-            az ad app federated-credential create --id $ApplicationId --parameters $federatedCredentialPath --output none
+    foreach ($credentialSubject in $credentialSubjects) {
+        $credentialWithSubject = $federatedCredentials | Where-Object { $_.subject -eq $credentialSubject.Subject } | Select-Object -First 1
+        if ($null -ne $credentialWithSubject) {
+            Write-Host "Federated credential already exists for subject '$($credentialSubject.Subject)'." -ForegroundColor Green
+            continue
         }
-    }
-    finally {
-        Remove-Item -Path $federatedCredentialPath -Force -ErrorAction SilentlyContinue
+
+        $credentialWithName = $federatedCredentials | Where-Object { $_.name -eq $credentialSubject.Name } | Select-Object -First 1
+        if ($null -ne $credentialWithName) {
+            throw "Federated credential '$($credentialSubject.Name)' already exists on application '$ApplicationId' but its subject is '$($credentialWithName.subject)', expected '$($credentialSubject.Subject)'. Update or remove that credential in Entra ID, then rerun this script."
+        }
+
+        $federatedCredential = [ordered]@{
+            name = $credentialSubject.Name
+            issuer = 'https://token.actions.githubusercontent.com'
+            subject = $credentialSubject.Subject
+            description = "GitHub access for the environment $EnvironmentName and repo $Repository"
+            audiences = @('api://AzureADTokenExchange')
+        }
+        $federatedCredentialJson = $federatedCredential | ConvertTo-Json -Depth 5 -Compress
+        $federatedCredentialPath = Join-Path ([System.IO.Path]::GetTempPath()) "$($credentialSubject.Name).json"
+        Set-Content -Path $federatedCredentialPath -Value $federatedCredentialJson -Encoding utf8
+
+        try {
+            InvokeExternalCommand -CommandDescription "Create federated credential '$($credentialSubject.Name)'" -ScriptBlock {
+                az ad app federated-credential create --id $ApplicationId --parameters $federatedCredentialPath --output none
+            }
+        }
+        finally {
+            Remove-Item -Path $federatedCredentialPath -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 

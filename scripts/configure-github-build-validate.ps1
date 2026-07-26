@@ -96,4 +96,4 @@ Write-Host ''
 Write-Host 'Build/Validate GitHub configuration complete.' -ForegroundColor Green
 Write-Host 'Validate workflow: no additional repository variables or secrets are required.' -ForegroundColor Green
 Write-Host 'Build workflow: requires SOLUTIONS_CONFIG plus PAC secrets in the solution-checker environment.' -ForegroundColor Green
-Write-Host "Build workflow: the PAC client application must have a GitHub federated credential for repo:$Repository`:environment:$SolutionCheckerEnvironment." -ForegroundColor Green
+Write-Host "Build workflow: the PAC client application must have GitHub federated credentials for the '$SolutionCheckerEnvironment' environment." -ForegroundColor Green
