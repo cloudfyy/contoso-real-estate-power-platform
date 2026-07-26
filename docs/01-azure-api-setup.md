@@ -15,7 +15,7 @@ The Contoso Real Estate (Power Platform Edition) project utilizes several Azure 
     - `StripeApiKey` - The Stripe API key to use for payment processing
     - `StripeWebhookSecret` - The Stripe webhook secret to use for verifying webhook events
 4. **Azure Storage Account** - Used by the Azure Functions runtime. Shared key access is disabled and the Function App uses managed identity for storage access.
-5. **Entra ID Application registrations** used to authenticate Power Platform against the Payments API. The client application secret is generated after provisioning by the `postprovision` hook, applied to the Function App, and written to private Key Vault by the `postdeploy` hook through the deployed Payments API.
+5. **Entra ID Application registrations** used to authenticate Power Platform against the Payments API. The client application secret is generated and applied during the `postdeploy` hook, then written to private Key Vault by the same `postdeploy` flow through the deployed Payments API.
 
 > [!NOTE]
 > For a full end-to-end set of instructions on how to install prerequisites, clone, build, deploy, and test the solutions, refer to [full-development-setup-instructions.md](./docs/00-full-development-setup-instructions.md).

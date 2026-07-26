@@ -2,10 +2,6 @@
 
 name: contoso-real-estate-api
 hooks:
-  postprovision:
-    shell: pwsh
-    run: ./hooks/postprovision.ps1
-    interactive: true
   postdeploy:
     shell: pwsh
     run: ./hooks/postdeploy.ps1
