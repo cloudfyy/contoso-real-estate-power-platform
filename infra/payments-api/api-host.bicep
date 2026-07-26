@@ -14,6 +14,7 @@ param storageManagedIdentity bool = false
 param virtualNetworkSubnetId string = ''
 
 param apiApplicationID string
+param apiClientApplicationID string
 @secure()
 param apiAppicationSecret string
 param paymentsApiClientSecretName string
@@ -148,6 +149,11 @@ resource authSettings 'Microsoft.Web/sites/config@2022-03-01' = {
           allowedAudiences: [
             'api://${apiApplicationID}'
           ]
+          defaultAuthorizationPolicy: {
+            allowedApplications: [
+              apiClientApplicationID
+            ]
+          }
         }
       }
     }
