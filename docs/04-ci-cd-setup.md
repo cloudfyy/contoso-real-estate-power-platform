@@ -23,10 +23,42 @@ azd deploy payments-api --environment development
 
 The GitHub validation workflow compiles the locked-down infrastructure template, but it does not deploy Azure resources or connect directly to private SQL, Key Vault, or Storage endpoints.
 
-For the deployment workflow to deploy to each environment the following setup is required:
+## Build and validate prerequisites
+
+Before running `Build` or `Validate`, configure the repository settings used by the workflows:
+
+- `Validate` runs the Power Platform solution build checks plus the Azure API/Bicep validation workflow. It does not require repository variables or Power Platform secrets.
+- `Build` runs a solution matrix and Power Platform Solution Checker, so it requires the `SOLUTIONS_CONFIG` repository variable plus the `solution-checker` GitHub environment and PAC authentication secrets.
+
+Run the helper script once after `azd provision` or `azd up` to configure the GitHub settings required by `Build`:
+
+```powershell
+./scripts/configure-github-build-validate.ps1 -azureEnv development
+```
+
+The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repository. It generates `SOLUTIONS_CONFIG` from the solution package definitions in `scripts/common/solution-packages.ps1`, reads `AZURE_TENANT_ID` and `ENTRA_API_CLIENT_APP_ID` from the selected azd environment, and reads the Power Platform environment URL from the current `pac env who` selection. You can still override any value explicitly:
+
+```powershell
+./scripts/configure-github-build-validate.ps1 `
+    -azureEnv development `
+    -PacDeployAzureTenantId '<tenant-id>' `
+    -PacDeployClientId '<application-client-id>' `
+    -PacDeployEnvUrl 'https://org123.crm.dynamics.com'
+```
+
+The PAC client application must already be configured as a Power Platform application user and must have a GitHub federated credential for the `solution-checker` environment subject: `repo:<owner>/<repo>:environment:solution-checker`.
+
+The helper script covers the Build/Validate prerequisites only:
+
+- Creates or updates the `solution-checker` GitHub environment.
+- Sets the `SOLUTIONS_CONFIG` repository variable.
+- Sets `PAC_DEPLOY_AZURE_TENANT_ID`, `PAC_DEPLOY_CLIENT_ID`, and `PAC_DEPLOY_ENV_URL` as secrets on the `solution-checker` environment.
+
+It does not configure the `development`, `testing`, or `production` deployment environments, and it does not generate `PAC_DEPLOY_CONFIG`. Those are deployment workflow settings.
+
+For the deployment workflow to deploy to each Power Platform environment, the following setup is required:
 
 - GitHub environments created (**GitHub** -> **Settings** -> **Environments**)
-    - **solution-checker** - Used to run the Solution Checker during build workflows. This requires a Power Platform connection to use the PAC CLI
     - **development** - Environment that the releases are deployed to first to stabilize a release. Integration and UI tests are performed in this environment.
     - **testing** - Environment that the releases are deployed to after a release is stabilized, for acceptance testing.
     - **production** - Final production environment
@@ -46,12 +78,12 @@ Approvals are used to gate each environment deployment.
 
 ## Adding an environments
 
-Perform the following steps for each GitHub environment ( `solution-checker`, `development`, `testing`, `production`). A minimum of solution-checker and development must be created to use the CI/CD workflows.
+Perform the following steps for each deployment GitHub environment (`development`, `testing`, `production`). A minimum of `development` must be created to use the deployment workflow. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1` for the Build workflow.
 
 1. Go to **Settings | Environments**
 1. Select **New environment**
-1. Give the environment a name (e.g. `solution-checker`, `development`, `testing`, `production`)
-1. For environments other than `solution-checker`, Check **Require reviewers**
+1. Give the environment a name (e.g. `development`, `testing`, `production`)
+1. Check **Require reviewers**
 1. Add one or more required reviewers by searching for their names
 1. Select **Save protection rules**
 1. Repeat for other environments
@@ -66,7 +98,7 @@ Federated credentials must be added to Entra ID to establish a trust.
 
 👉 To set up these credentials, drag the script `/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1` into your VSCode terminal and press **ENTER**.
 
-To perform these steps manually you can use the following steps:
+To perform these steps manually for a deployment environment, use the following steps:
 1. Authenticate the [Power Platform CLI](https://marketplace.visualstudio.com/items?itemName=microsoft-IsvExpTools.powerplatform-vscode) and select the target Power Platform environment:
     ```powershell
     pac auth create
@@ -82,7 +114,8 @@ To perform these steps manually you can use the following steps:
 1. Drag the script [/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1](/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1) into your VSCode terminal, and press **ENTER** to set up the GitHub CI/CD authentication. 
 
 ## Manual Steps
-The script performs the following steps for you:
+
+The federated credential script performs the following steps for each deployment environment. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1`.
 
 1. Log in to your Azure account by running the following command and following the prompts:
 
@@ -92,25 +125,30 @@ The script performs the following steps for you:
 
     This will open a browser window where you can authenticate with your Azure account.
 
-1. Create an Entra ID Application and application ID for that environment.
+1. Create or reuse an Entra ID application for that GitHub environment.
 
     ```powershell
     $environmentName = "development"
     
     $tenantId = az account show --query tenantId -o tsv
+    . ./infra/scripts/function-get-environment-variables.ps1
+    $envVars = GetEnvironmentVariables -azureEnv $environmentName
     $environmentDetails = pac env who --json | ConvertFrom-Json
     $environmentUrl = $environmentDetails.OrgUrl.TrimEnd('/')
     $spnName = "cre-github-workflows-$environmentName"
     $remoteUrl = git remote get-url origin
     if ($remoteUrl -match "github\.com[:/](.+?)/(.+?)(\.git)?$") {$repoName = $matches[1] + "/" + $matches[2] }
-    $spn = pac admin create-service-principal --name $spnName --json | ConvertFrom-Json
+
+    $applicationId = az ad sp list --display-name $spnName --query "[0].appId" -o tsv
+    if (-not $applicationId) {
+        pac admin create-service-principal --name $spnName
+        $applicationId = az ad sp list --display-name $spnName --query "[0].appId" -o tsv
+    }
     ```
     
-1. For an existing SPN, add the SPN as an application user to the target Power Platform environment. For the solution-packager environment, use the same as the development environment:
+1. Add the application as an application user to the target Power Platform environment:
 
     ```powershell
-    $applicationId = az ad sp list --display-name $spnName --query "[0].appId" -o tsv
-    # Currently the pac admin create-service-principal or list-service-principal verbs do not support the --json command, so use az to get the application id
     pac admin assign-user --environment $environmentUrl --application-user --user $applicationId --role "System Administrator"
     ```
 
@@ -119,6 +157,13 @@ The script performs the following steps for you:
     ```powershell
     $applicationId = az ad sp list --display-name $spnName --query "[0].appId" -o tsv
     az ad app federated-credential create --id $applicationId --parameters "{'name': '$spnName','issuer': 'https://token.actions.githubusercontent.com','subject': 'repo:$($repoName):environment:$environmentName','description': 'GitHub access for the environment $environmentName and repo $repoName ','audiences': ['api://AzureADTokenExchange']}" >> $null
+    ```
+
+1. Grant the application access to the deployed Key Vault so Dataverse can read Key Vault-backed environment variable secrets during solution import:
+
+    ```powershell
+    az role assignment create --role "Key Vault Secrets User" --assignee $applicationId --scope /subscriptions/$($envVars.AZURE_SUBSCRIPTION_ID)/resourceGroups/$($envVars.AZURE_RESOURCE_GROUP)/providers/Microsoft.KeyVault/vaults/$($envVars.AZURE_KEY_VAULT_NAME)
+    az role assignment create --role "Key Vault Reader" --assignee $applicationId --scope /subscriptions/$($envVars.AZURE_SUBSCRIPTION_ID)/resourceGroups/$($envVars.AZURE_RESOURCE_GROUP)/providers/Microsoft.KeyVault/vaults/$($envVars.AZURE_KEY_VAULT_NAME)
     ```
 
 1. Inside GitHub, navigate to **Settings** -> **Environments** -> **Select Environment**
@@ -164,40 +209,23 @@ The variable must be in the form:
 This script will also prompt you to create an environment secret called `PLUGIN_MANAGED_IDENTITY_APP_ID` containing the Application ID of the Payment API Client that the C# Plugin Virtual Table Provider will use to connect to the Payment API. This is injected into the solution before it is deployed because at this time the Managed Identity Application Id and Tenant Id are not configurable using `deploymentSettings.json`.
 
 ## Set repository variables
-A repository variable is needed to control which solutions are built.
 
-1. Navigate to **GitHub** -> **Settings** -> **Secrets and Variables** -> **Actions** -> **Variable Tab**
-1. Select **New repository variable**
-1. Enter the following variables:
- - `SOLUTIONS_CONFIG`
+The `Build` workflow needs the `SOLUTIONS_CONFIG` repository variable to expand its solution matrix. The helper script creates this variable automatically from the solution package definitions in `scripts/common/solution-packages.ps1`, so you should not need to maintain a separate JSON copy in GitHub.
 
-    ```json
-    [
-    {
-        "solutionName": "ContosoRealEstateCustomControls",
-        "changeScope": "src/controls",
-        "solutionSubFolder": "solution/ContosoRealEstateCustomControls",
-        "runSolutionChecker": true,
-        "solutionCheckerRuleLevelOverride":""
-    },
-    {
-        "solutionName": "ContosoRealEstateCore",
-        "changeScope": "src/core",
-        "solutionSubFolder": "solution/ContosoRealEstateCore",
-        "runSolutionChecker": true,
-        "solutionCheckerRuleLevelOverride":""
-    },
-    {
-        "solutionName": "ContosoRealEstatePortal",
-        "changeScope": "src/portal",
-        "solutionSubFolder": "solution/ContosoRealEstatePortal",
-        "runSolutionChecker": true,
-        "solutionCheckerRuleLevelOverride":""
-    }
-    ]
-    ```
+To preview the generated value locally, run:
 
-- (Optional) `ACTIONS_STEP_DEBUG` = true/false
+```powershell
+. ./scripts/common/solution-packages.ps1
+Get-GitHubSolutionsConfigJson
+```
+
+If you need a custom matrix, provide a JSON file to the helper script:
+
+```powershell
+./scripts/configure-github-build-validate.ps1 -azureEnv development -SolutionsConfigPath ./path/to/solutions-config.json
+```
+
+The optional `ACTIONS_STEP_DEBUG` repository variable can still be set manually to `true` or `false` from **GitHub** -> **Settings** -> **Secrets and Variables** -> **Actions** -> **Variables**.
 
 ## Local package build and release helpers
 

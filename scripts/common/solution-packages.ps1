@@ -218,6 +218,26 @@ function Resolve-SolutionPackageDefinitions {
     }
 }
 
+function Get-GitHubSolutionsConfigJson {
+    $solutionsConfig = Get-SolutionPackageDefinitions | ForEach-Object {
+        $projectDirectory = Split-Path -Path $_.ProjectPath -Parent
+        $pathParts = @($projectDirectory -split '[\\/]')
+        if ($pathParts.Count -lt 3) {
+            throw "Unable to derive GitHub solution config from project path '$($_.ProjectPath)'."
+        }
+
+        [pscustomobject]@{
+            solutionName = $_.UniqueName
+            changeScope = ($pathParts[0..1] -join '/')
+            solutionSubFolder = ($pathParts[2..($pathParts.Count - 1)] -join '/')
+            runSolutionChecker = $true
+            solutionCheckerRuleLevelOverride = ''
+        }
+    }
+
+    return $solutionsConfig | ConvertTo-Json -Depth 10
+}
+
 function Test-SolutionPackage {
     param (
         [string]$PackagePath,

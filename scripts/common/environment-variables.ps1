@@ -135,6 +135,54 @@ $message (Y/N)
     }
 }
 
+function AssertCommandExists {
+    param (
+        [string]$Name
+    )
+
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "Required command '$Name' was not found. Install it, then rerun this script."
+    }
+}
+
+function AssertCommandSucceeded {
+    param (
+        [string]$CommandDescription
+    )
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "$CommandDescription failed with exit code $LASTEXITCODE."
+    }
+}
+
+function InvokeExternalCommand {
+    param (
+        [string]$CommandDescription,
+        [scriptblock]$ScriptBlock
+    )
+
+    & $ScriptBlock
+    AssertCommandSucceeded -CommandDescription $CommandDescription
+}
+
+function GetRequiredValue {
+    param (
+        [string]$Value,
+        [string]$Name
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Value)) {
+        return $Value
+    }
+
+    $enteredValue = Read-Host -Prompt $Name
+    if ([string]::IsNullOrWhiteSpace($enteredValue)) {
+        throw "A value is required for '$Name'."
+    }
+
+    return $enteredValue
+}
+
 function CheckAZCLI {
     Write-Progress -Activity "Checking access via Azure CLI..."
     try {
