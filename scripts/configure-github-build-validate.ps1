@@ -8,6 +8,7 @@ param (
     [string]$SolutionCheckerEnvironment = 'solution-checker',
     [string]$PacDeployAzureTenantId,
     [string]$PacDeployClientId,
+    [Parameter(HelpMessage = 'Core Dev Dataverse environment URL used by the Build workflow Solution Checker.')]
     [string]$PacDeployEnvUrl,
     [string]$PowerPlatformApplicationUserRole = 'System Customizer',
     [string]$SolutionsConfigPath,
@@ -51,7 +52,7 @@ if ([string]::IsNullOrWhiteSpace($PacDeployEnvUrl) -and $UseCurrentPacEnvironmen
 }
 
 if (-not $SkipSolutionCheckerSecrets -and [string]::IsNullOrWhiteSpace($PacDeployEnvUrl)) {
-    throw "PAC_DEPLOY_ENV_URL is required. Pass -PacDeployEnvUrl with the Core development Power Platform environment URL, or pass -UseCurrentPacEnvironment to use the current pac environment selection."
+    throw "PAC_DEPLOY_ENV_URL is required. Pass -PacDeployEnvUrl with the Core Dev Dataverse environment URL used by Build Solution Checker, or pass -UseCurrentPacEnvironment to use the current pac environment selection."
 }
 
 if (-not [string]::IsNullOrWhiteSpace($SolutionsConfigPath)) {
@@ -74,7 +75,7 @@ $environmentUrl = $null
 if (-not $SkipSolutionCheckerSecrets) {
     $tenantId = GetRequiredValue -Name 'PAC_DEPLOY_AZURE_TENANT_ID' -Value $PacDeployAzureTenantId
     $clientId = GetRequiredValue -Name 'PAC_DEPLOY_CLIENT_ID' -Value $PacDeployClientId
-    $environmentUrl = GetRequiredValue -Name 'PAC_DEPLOY_ENV_URL' -Value $PacDeployEnvUrl
+    $environmentUrl = GetRequiredValue -Name 'PAC_DEPLOY_ENV_URL (Core Dev Dataverse environment URL)' -Value $PacDeployEnvUrl
 }
 elseif (-not [string]::IsNullOrWhiteSpace($PacDeployClientId)) {
     $clientId = $PacDeployClientId
