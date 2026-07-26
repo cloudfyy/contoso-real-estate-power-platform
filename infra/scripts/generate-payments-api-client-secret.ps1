@@ -70,6 +70,10 @@ $existingClientSecret = Get-FunctionAppSetting `
 
 if (Test-ClientSecret -TenantId $tenantId -ClientAppId $clientAppId -ApiAppId $apiAppId -ClientSecret $existingClientSecret) {
 	Write-Host 'Existing Entra client secret is still valid. Skipping secret generation.' -ForegroundColor Green
+	@{
+		generated = $false
+		endDateTime = $null
+	} | ConvertTo-Json -Compress
 	return
 }
 
@@ -128,3 +132,8 @@ $existingCredentials |
 	}
 
 Write-Host 'Entra client secret generated and applied.' -ForegroundColor Green
+
+@{
+	generated = $true
+	endDateTime = $endDateTime
+} | ConvertTo-Json -Compress

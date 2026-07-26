@@ -113,9 +113,24 @@ try {
         throw "The Payments API client secret endpoint did not return a secret value."
     }
 
+    if ([string]::IsNullOrWhiteSpace([string]$secretResponse.name)) {
+        throw "The Payments API client secret endpoint did not return the secret name."
+    }
+
+    $secretExpiresOn = if ($null -ne $secretResponse.expiresOn -and -not [string]::IsNullOrWhiteSpace([string]$secretResponse.expiresOn)) {
+        [string]$secretResponse.expiresOn
+    }
+    else {
+        '<not set>'
+    }
+
     Write-Host "Use the following values when editing the Contoso Payments API and Contoso Stripe API custom connectors:" -ForegroundColor Green
     Write-Host "Client ID:" -ForegroundColor Green
     Write-Host $apiClientAppId -ForegroundColor Cyan
+    Write-Host "Key Vault Secret Name:" -ForegroundColor Green
+    Write-Host ([string]$secretResponse.name) -ForegroundColor Cyan
+    Write-Host "Key Vault Secret ExpiresOn:" -ForegroundColor Green
+    Write-Host $secretExpiresOn -ForegroundColor Cyan
     Write-Host "Client Secret:" -ForegroundColor Green
     Write-Host ([string]$secretResponse.value) -ForegroundColor Cyan
 }

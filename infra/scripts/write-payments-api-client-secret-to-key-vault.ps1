@@ -3,7 +3,8 @@
 # This script writes the Payments API client secret to Key Vault through the deployed Payments API Function App.
 # -----------------------------------------------------------------------
 param (
-    [string]$azureEnv
+    [string]$azureEnv,
+    [string]$secretExpiresOn
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,12 +15,19 @@ function Invoke-PaymentsApiClientSecretWriteWithRetry {
     param (
         [string]$Uri,
         [string]$Token,
-        [string]$SecretValue
+        [string]$SecretValue,
+        [string]$SecretExpiresOn
     )
 
     $requestBody = @{
         value = $SecretValue
-    } | ConvertTo-Json -Compress
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SecretExpiresOn)) {
+        $requestBody.expiresOn = $SecretExpiresOn
+    }
+
+    $requestBody = $requestBody | ConvertTo-Json -Compress
 
     for ($attempt = 1; $attempt -le 60; $attempt++) {
         try {
@@ -121,12 +129,14 @@ try {
     $result = Invoke-PaymentsApiClientSecretWriteWithRetry `
         -Uri $secretWriteUri `
         -Token $token `
-        -SecretValue $apiClientSecret
+        -SecretValue $apiClientSecret `
+        -SecretExpiresOn $secretExpiresOn
 
     Write-Host "Payments API client secret stored in Key Vault" -ForegroundColor Cyan
     @{
         name = $result.name
         updatedOn = $result.updatedOn
+        expiresOn = $result.expiresOn
     } | ConvertTo-Json
 }
 finally {

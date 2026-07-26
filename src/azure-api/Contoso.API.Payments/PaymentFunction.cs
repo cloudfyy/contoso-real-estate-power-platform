@@ -418,7 +418,7 @@ public class PaymentFunction
 
     [Function("setPaymentsApiClientSecret")]
     [OpenApiOperation(operationId: "setPaymentsApiClientSecret", tags: new[] { "configuration" }, Summary = "Set Payments API client secret", Description = "Stores the Payments API client secret in Key Vault for deployment configuration")]
-    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(PaymentsApiClientSecretRequest), Required = true, Description = "Payments API client secret value")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(PaymentsApiClientSecretRequest), Required = true, Description = "Payments API client secret value and optional expiration")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "OK - Payments API client secret stored")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.BadRequest, Description = "Invalid request")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NotFound, Description = "Secret write endpoint is disabled")]
@@ -453,7 +453,7 @@ public class PaymentFunction
                 return new BadRequestObjectResult(new { error = "Value is required." });
             }
 
-            var secret = await SetPaymentsApiClientSecretInternal(secretRequest.Value);
+            var secret = await SetPaymentsApiClientSecretInternal(secretRequest.Value, secretRequest.ExpiresOn);
             return new OkObjectResult(secret);
         }
         catch (UnauthorizedAccessException ex)
@@ -870,20 +870,28 @@ ORDER BY ORDINAL_POSITION;";
         return new
         {
             name = secretName,
-            value = secret.Value
+            value = secret.Value,
+            expiresOn = secret.Properties.ExpiresOn
         };
     }
 
-    internal async Task<object> SetPaymentsApiClientSecretInternal(string value)
+    internal async Task<object> SetPaymentsApiClientSecretInternal(string value, DateTimeOffset? expiresOn = null)
     {
         var secretClient = CreateSecretClient();
         var secretName = GetPaymentsApiClientSecretName();
-        KeyVaultSecret secret = await secretClient.SetSecretAsync(secretName, value);
+        var keyVaultSecret = new KeyVaultSecret(secretName, value);
+        if (expiresOn.HasValue)
+        {
+            keyVaultSecret.Properties.ExpiresOn = expiresOn.Value;
+        }
+
+        KeyVaultSecret secret = await secretClient.SetSecretAsync(keyVaultSecret);
 
         return new
         {
             name = secretName,
-            updatedOn = secret.Properties.UpdatedOn
+            updatedOn = secret.Properties.UpdatedOn,
+            expiresOn = secret.Properties.ExpiresOn
         };
     }
 
@@ -997,6 +1005,7 @@ public class StripeConfigurationRequest
 public class PaymentsApiClientSecretRequest
 {
     public string Value { get; set; }
+    public DateTimeOffset? ExpiresOn { get; set; }
 }
 
 public enum PaymentStatus
