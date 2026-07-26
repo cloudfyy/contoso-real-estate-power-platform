@@ -644,31 +644,6 @@ To deploy the Portal solution, perform the following steps:
 > [!TIP]
 > If a solution build fails with `MSB3231: Unable to remove directory "obj\Release\Metadata"`, see [Solution Build File Lock Troubleshooting](08-solution-build-file-lock-troubleshooting.md).
 
-## ✅Core Post Deployment Set up
-
-To perform post deployment steps, first drag the Core solution post deployment setup script into the VSCode terminal and press Enter.
-
-```powershell
-src\core\solution\deployment-scripts\2-post-deployment-setup.ps1
-```
-
-This will:
-
-- Reply URLs added to the Payments API Entra ID application registration to match the custom connectors
-- Update the Plugin Managed Identity to match your azure deployment
-
-After `src\core\solution\deployment-scripts\1-deploy-to-development-environment.ps1` imports the Core solution, it is expected to see a message similar to: `Data Source secrets are not included in solutions. You'll need to edit your data sources to add secrets back following solution import.` This indicates the custom connectors were created, but the OAuth client secret must be added manually.
-
-1. Display the current Payments API client secret:
-
-   ```powershell
-   ./infra/scripts/show-payments-api-client-secret.ps1 -azureEnv <your-azure-env>
-   ```
-
-1. In make.powerautomate.com, open both custom connectors (`Contoso Payments API` and `Contoso Stripe API`) and edit **Security**.
-
-1. Paste the secret into the OAuth client secret field for each connector, then save and update each connector.
-
 ### 🔌Create connections
 
 The portal solution uses a couple of connections. When importing the solution manually you will be prompted to wire up the different connection references to an actual connection, but when using the deployment script you will need to create them after deployment. The CI/CD pipeline automatically associates the connection references to connections using the deploymentSettings.json
