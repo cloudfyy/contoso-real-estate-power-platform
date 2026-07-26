@@ -652,10 +652,15 @@ Note: You will need to have run the post deployment steps for the core solution 
 
 This can be done automatically in the CI/CD deployment pipeline using the `deploymentSettings.json` but is easiest done manually when working on your development environment.
 
-- `Dataverse` - Connection used by Cloud Flows and Copilot Studio
-- `Contoso Stripe API` - Connection for Portal Cloud Flows
+Connection meaning:
 
-1. Open make.powerapps.com and open the `Contoso Real Estate Portal` solution
+- `Dataverse`: Used by Cloud Flows and Copilot Studio components in the portal solution to read and write Dataverse data.
+- `Contoso Stripe API`: Used by Portal Cloud Flows that call the custom connector for Stripe-related payment operations.
+
+Important: create these connections in the same Power Platform environment where you imported `Contoso Real Estate Portal` (for example, your `CRE Portal Dev` environment).
+
+1. Open [make.powerapps.com](https://make.powerapps.com/) and switch to the target environment (top-right environment picker), for example `CRE Portal Dev`.
+1. Open the `Contoso Real Estate Portal` solution
 1. Open **Connection References**
 1. Select each connection reference and select **+ New connection** under the **Connection** dropdown.
 1. Search for the Connector type (Dataverse or Contoso Stripe API) and select the **+** add button, and then **Create**.
