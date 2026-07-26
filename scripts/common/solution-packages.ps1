@@ -280,7 +280,7 @@ function Invoke-DotNetBuild {
         [string]$ProjectPath
     )
 
-    $arguments = @('build', '-c', 'Release', $ProjectPath, '/nodeReuse:false')
+    $arguments = @('build', '-c', 'Release', $ProjectPath)
 
     Write-Host "dotnet $($arguments -join ' ')" -ForegroundColor Cyan
     & dotnet @arguments
