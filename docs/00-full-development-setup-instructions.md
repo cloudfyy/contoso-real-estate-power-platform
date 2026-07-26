@@ -700,8 +700,15 @@ Important: create these connections in the same Power Platform environment where
        - Save and select **Update connector** before creating the connection.
 1. For production, SPNs will be used, however for development you can use your own account.
 1. Return to the Connection References panel, select **Refresh**, and select the connection you have created (it will show as your login name)
+
+   ![Connection References panel](./assets/connection-references-panel.png)
+
 1. Repeat for all connection references.
 1. Navigate to Cloud Flows and select **Turn on** for each flow that is in the Off Status. (This isn't needed in CI/CD since the connection references are configured using the `deploymentSettings.json` and the flows are automatically turned on)
+
+   ![Cloud Flows Turn on menu](./assets/cloud-flows-turn-on.png)
+
+   
 
 > [!WARNING]
 > If creating the `Contoso Stripe API` connection fails with `AADSTS50011` (redirect URI mismatch), use the following fix.
