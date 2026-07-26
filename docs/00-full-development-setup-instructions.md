@@ -624,9 +624,11 @@ To deploy the Portal solution, perform the following steps:
 
 1. Drag into the terminal the script at `src\portal\solution\deployment-scripts\deploy-to-development-environment.ps1`, press Enter, and follow the instructions carefully.
 
-1. The deployment script asks whether to download solution packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing `ContosoRealEstateCustomControls_managed.zip`, `ContosoRealEstateCore_managed.zip`, and the Portal solution package. If you choose GitHub releases, it downloads all required packages and skips local solution build. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed dependency zips into `temp_releases` and deploys the locally built Portal solution.
+1. The deployment script asks whether to use packages from GitHub releases in your `origin` repository, or build packages locally. Before either path, it clears `temp_releases`.
+   - If you choose **GitHub releases**, the script downloads `ContosoRealEstateCustomControls_managed.zip`, `ContosoRealEstateCore_managed.zip`, and the Portal package, then deploys them without running a local build.
+   - If you choose **local build**, the script warns that the build can take up to 20 minutes, builds the required solutions, copies the generated managed zips into `temp_releases`, and deploys the locally built Portal package.
 
-1. The Portal solution will be built locally
+1. The Portal solution is only built locally when you choose the **local build** option in the previous step.
 
 1. The **managed** solutions are first installed, and then the portal **unmanaged** solution is imported.
 
