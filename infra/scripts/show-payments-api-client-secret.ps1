@@ -113,7 +113,10 @@ try {
         throw "The Payments API client secret endpoint did not return a secret value."
     }
 
-    Write-Host "Use this value as the Client Secret when editing the Contoso Payments API and Contoso Stripe API custom connectors:" -ForegroundColor Green
+    Write-Host "Use the following values when editing the Contoso Payments API and Contoso Stripe API custom connectors:" -ForegroundColor Green
+    Write-Host "Client ID:" -ForegroundColor Green
+    Write-Host $apiClientAppId -ForegroundColor Cyan
+    Write-Host "Client Secret:" -ForegroundColor Green
     Write-Host ([string]$secretResponse.value) -ForegroundColor Cyan
 }
 finally {
