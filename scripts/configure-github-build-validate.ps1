@@ -18,29 +18,14 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common\solution-packages.ps1"
 . "$PSScriptRoot\common\environment-variables.ps1"
 
-function Get-PowerPlatformEnvironmentUrl {
-    if (-not (Get-Command 'pac' -ErrorAction SilentlyContinue)) {
-        return ''
-    }
-
-    $environmentDetailsJson = pac env who --json 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($environmentDetailsJson -join ''))) {
-        return ''
-    }
-
-    $environmentDetails = $environmentDetailsJson | ConvertFrom-Json
-    return ([string]$environmentDetails.OrgUrl).TrimEnd('/')
-}
-
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
 
 AssertCommandExists -Name 'git'
-AssertCommandExists -Name 'gh'
+AssertCommandExists -Name 'az'
 
-InvokeExternalCommand -CommandDescription 'Check GitHub CLI authentication' -ScriptBlock {
-    gh auth status --hostname github.com
-}
+CheckGitHubCLI
+CheckAZCLI
 
 if ([string]::IsNullOrWhiteSpace($Repository)) {
     $Repository = GetGitHubRepositoryName -remoteNames @($Remote)
@@ -73,31 +58,37 @@ Write-Host "Repository: $Repository" -ForegroundColor Cyan
 Write-Host "Solution checker environment: $SolutionCheckerEnvironment" -ForegroundColor Cyan
 Write-Host "Azure environment: $($envVars.AZURE_ENV_NAME)" -ForegroundColor Cyan
 
-if ($PSCmdlet.ShouldProcess($Repository, 'configure GitHub Build and Validate prerequisites')) {
-    InvokeExternalCommand -CommandDescription "Create or update GitHub environment '$SolutionCheckerEnvironment'" -ScriptBlock {
-        gh api --method PUT "repos/$Repository/environments/$SolutionCheckerEnvironment" --silent
-    }
+$tenantId = $null
+$clientId = $null
+$environmentUrl = $null
 
-    InvokeExternalCommand -CommandDescription "Set repository variable 'SOLUTIONS_CONFIG'" -ScriptBlock {
-        gh variable set SOLUTIONS_CONFIG --repo $Repository --body $solutionsConfigJson
-    }
+if (-not $SkipSolutionCheckerSecrets) {
+    $tenantId = GetRequiredValue -Name 'PAC_DEPLOY_AZURE_TENANT_ID' -Value $PacDeployAzureTenantId
+    $clientId = GetRequiredValue -Name 'PAC_DEPLOY_CLIENT_ID' -Value $PacDeployClientId
+    $environmentUrl = GetRequiredValue -Name 'PAC_DEPLOY_ENV_URL' -Value $PacDeployEnvUrl
+}
+elseif (-not [string]::IsNullOrWhiteSpace($PacDeployClientId)) {
+    $clientId = $PacDeployClientId
+}
+
+if ($PSCmdlet.ShouldProcess($Repository, 'configure GitHub Build and Validate prerequisites')) {
+    Set-GitHubEnvironment -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment
+    Set-GitHubRepositoryVariable -Repository $Repository -Name 'SOLUTIONS_CONFIG' -Value $solutionsConfigJson
 
     if (-not $SkipSolutionCheckerSecrets) {
-        $tenantId = GetRequiredValue -Name 'PAC_DEPLOY_AZURE_TENANT_ID' -Value $PacDeployAzureTenantId
-        $clientId = GetRequiredValue -Name 'PAC_DEPLOY_CLIENT_ID' -Value $PacDeployClientId
-        $environmentUrl = GetRequiredValue -Name 'PAC_DEPLOY_ENV_URL' -Value $PacDeployEnvUrl
+        Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_AZURE_TENANT_ID' -Value $tenantId
+        Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_CLIENT_ID' -Value $clientId
+        Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_ENV_URL' -Value $environmentUrl
+    }
 
-        InvokeExternalCommand -CommandDescription "Set environment secret 'PAC_DEPLOY_AZURE_TENANT_ID'" -ScriptBlock {
-            $tenantId | gh secret set PAC_DEPLOY_AZURE_TENANT_ID --repo $Repository --env $SolutionCheckerEnvironment
-        }
-
-        InvokeExternalCommand -CommandDescription "Set environment secret 'PAC_DEPLOY_CLIENT_ID'" -ScriptBlock {
-            $clientId | gh secret set PAC_DEPLOY_CLIENT_ID --repo $Repository --env $SolutionCheckerEnvironment
-        }
-
-        InvokeExternalCommand -CommandDescription "Set environment secret 'PAC_DEPLOY_ENV_URL'" -ScriptBlock {
-            $environmentUrl | gh secret set PAC_DEPLOY_ENV_URL --repo $Repository --env $SolutionCheckerEnvironment
-        }
+    if (-not [string]::IsNullOrWhiteSpace($clientId)) {
+        Add-GitHubEnvironmentFederatedCredential `
+            -ApplicationId $clientId `
+            -Repository $Repository `
+            -EnvironmentName $SolutionCheckerEnvironment
+    }
+    else {
+        Write-Host "Skipping federated credential setup because PAC_DEPLOY_CLIENT_ID is not available." -ForegroundColor Yellow
     }
 }
 
@@ -105,4 +96,4 @@ Write-Host ''
 Write-Host 'Build/Validate GitHub configuration complete.' -ForegroundColor Green
 Write-Host 'Validate workflow: no additional repository variables or secrets are required.' -ForegroundColor Green
 Write-Host 'Build workflow: requires SOLUTIONS_CONFIG plus PAC secrets in the solution-checker environment.' -ForegroundColor Green
-Write-Host 'The PAC client application must also have a GitHub federated credential for repo:<owner>/<repo>:environment:solution-checker.' -ForegroundColor Yellow
+Write-Host "Build workflow: the PAC client application must have a GitHub federated credential for repo:$Repository`:environment:$SolutionCheckerEnvironment." -ForegroundColor Green

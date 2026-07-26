@@ -46,13 +46,14 @@ The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repo
     -PacDeployEnvUrl 'https://org123.crm.dynamics.com'
 ```
 
-The PAC client application must already be configured as a Power Platform application user and must have a GitHub federated credential for the `solution-checker` environment subject: `repo:<owner>/<repo>:environment:solution-checker`.
+The PAC client application must already be configured as a Power Platform application user. The helper script creates or confirms the GitHub federated credential for the `solution-checker` environment subject: `repo:<owner>/<repo>:environment:solution-checker`.
 
 The helper script covers the Build/Validate prerequisites only:
 
 - Creates or updates the `solution-checker` GitHub environment.
 - Sets the `SOLUTIONS_CONFIG` repository variable.
 - Sets `PAC_DEPLOY_AZURE_TENANT_ID`, `PAC_DEPLOY_CLIENT_ID`, and `PAC_DEPLOY_ENV_URL` as secrets on the `solution-checker` environment.
+- Creates or confirms the Entra ID federated credential for the `solution-checker` GitHub environment.
 
 It does not configure the `development`, `testing`, or `production` deployment environments, and it does not generate `PAC_DEPLOY_CONFIG`. Those are deployment workflow settings.
 
@@ -76,9 +77,9 @@ Approvals are used to gate each environment deployment.
 > [!NOTE]
 > This feature is only available to **public** repos on Pro or Team based accounts. 
 
-## Adding an environments
+## Adding Environment Protection Rules
 
-Perform the following steps for each deployment GitHub environment (`development`, `testing`, `production`). A minimum of `development` must be created to use the deployment workflow. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1` for the Build workflow.
+Perform the following steps for each deployment GitHub environment (`development`, `testing`, `production`) after running the federated credential script below. A minimum of `development` must be created to use the deployment workflow. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1` for the Build workflow.
 
 1. Go to **Settings | Environments**
 1. Select **New environment**
@@ -94,7 +95,7 @@ GitHub workflow pac commands can connect using:
 ```
 pac auth create --githubFederated --tenant ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }} --applicationId ${{ secrets.PAC_DEPLOY_CLIENT_ID }} --environment ${{ secrets.PAC_DEPLOY_ENV_URL }}
 ```
-Federated credentials must be added to Entra ID to establish a trust.
+Federated credentials must be added to Entra ID to establish a trust. The deployment setup script creates or updates the GitHub environment, sets the PAC deployment secrets, creates or reuses the Entra ID application, creates or confirms the GitHub environment federated credential, and grants Key Vault access.
 
 👉 To set up these credentials, drag the script `/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1` into your VSCode terminal and press **ENTER**.
 
@@ -152,11 +153,21 @@ The federated credential script performs the following steps for each deployment
     pac admin assign-user --environment $environmentUrl --application-user --user $applicationId --role "System Administrator"
     ```
 
-1. Register the application id as federated credentials for GitHub:
+1. Register the application id as federated credentials for GitHub. Use a JSON file when running from PowerShell so Azure CLI receives valid JSON:
 
     ```powershell
-    $applicationId = az ad sp list --display-name $spnName --query "[0].appId" -o tsv
-    az ad app federated-credential create --id $applicationId --parameters "{'name': '$spnName','issuer': 'https://token.actions.githubusercontent.com','subject': 'repo:$($repoName):environment:$environmentName','description': 'GitHub access for the environment $environmentName and repo $repoName ','audiences': ['api://AzureADTokenExchange']}" >> $null
+    $federatedCredential = @{
+        name = $spnName
+        issuer = 'https://token.actions.githubusercontent.com'
+        subject = "repo:${repoName}:environment:${environmentName}"
+        description = "GitHub access for the environment $environmentName and repo $repoName"
+        audiences = @('api://AzureADTokenExchange')
+    } | ConvertTo-Json -Depth 5
+
+    $federatedCredentialPath = Join-Path ([System.IO.Path]::GetTempPath()) "$spnName.json"
+    Set-Content -Path $federatedCredentialPath -Value $federatedCredential -Encoding utf8
+    az ad app federated-credential create --id $applicationId --parameters $federatedCredentialPath --output none
+    Remove-Item -Path $federatedCredentialPath -Force
     ```
 
 1. Grant the application access to the deployed Key Vault so Dataverse can read Key Vault-backed environment variable secrets during solution import:
@@ -166,16 +177,13 @@ The federated credential script performs the following steps for each deployment
     az role assignment create --role "Key Vault Reader" --assignee $applicationId --scope /subscriptions/$($envVars.AZURE_SUBSCRIPTION_ID)/resourceGroups/$($envVars.AZURE_RESOURCE_GROUP)/providers/Microsoft.KeyVault/vaults/$($envVars.AZURE_KEY_VAULT_NAME)
     ```
 
-1. Inside GitHub, navigate to **Settings** -> **Environments** -> **Select Environment**
-1. Select **Add environment secret**
-1. Use the following script to create the secrets:
+1. Create or update the GitHub environment and set the PAC deployment secrets:
 
     ```powershell
-    Write-Host @"
-    PAC_DEPLOY_AZURE_TENANT_ID = $tenantId
-    PAC_DEPLOY_CLIENT_ID = $applicationId
-    PAC_DEPLOY_ENV_URL = $environmentUrl
-    "@
+    gh api --method PUT "repos/$repoName/environments/$environmentName" --silent
+    $tenantId | gh secret set PAC_DEPLOY_AZURE_TENANT_ID --repo $repoName --env $environmentName
+    $applicationId | gh secret set PAC_DEPLOY_CLIENT_ID --repo $repoName --env $environmentName
+    $environmentUrl | gh secret set PAC_DEPLOY_ENV_URL --repo $repoName --env $environmentName
     ```
 
 ## Deployment Settings

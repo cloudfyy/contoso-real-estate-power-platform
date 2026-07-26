@@ -148,7 +148,7 @@ jobs:
       if: steps.get_version.outputs.changed == 'true' || github.event.inputs.forceRebuild == 'true'
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
 
     - name: Build
       if: steps.get_version.outputs.changed == 'true' || github.event.inputs.forceRebuild == 'true'

@@ -14,13 +14,13 @@ $azureEnv = $envVars.AZURE_ENV_NAME
 if (-not $skipLoginChecks) {
     CheckPACCLI
     CheckAZCLI
+    CheckGitHubCLI
 }
 
 # Prompt for the name of the Github environment
 $environmentName = Read-Host "Enter the name of the GitHub environment (e.g. development/test/production)"
 $tenantId = az account show --query tenantId -o tsv
-$environmentDetails = pac env who --json | ConvertFrom-Json
-$environmentUrl = $environmentDetails.OrgUrl.TrimEnd('/')
+$environmentUrl = Get-PowerPlatformEnvironmentUrl
 $spnName = "cre-github-workflows-$environmentName"
 Set-Location -Path $PSScriptRoot
 $repoName = GetGitHubRepositoryName -remoteNames @('origin')
@@ -48,7 +48,17 @@ else
 }
 
 Write-Host "Adding federated credentials to $applicationId for environment $environmentName and repo $repoName" -ForegroundColor Green
-az ad app federated-credential create --id $applicationId --parameters "{'name': '$spnName','issuer': 'https://token.actions.githubusercontent.com','subject': 'repo:$($repoName):environment:$environmentName','description': 'GitHub access for the environment $environmentName and repo $repoName ','audiences': ['api://AzureADTokenExchange']}" >> $null
+Add-GitHubEnvironmentFederatedCredential `
+    -ApplicationId $applicationId `
+    -Repository $repoName `
+    -EnvironmentName $environmentName `
+    -CredentialName $spnName
+
+Write-Host "Configuring GitHub environment '$environmentName' in '$repoName'" -ForegroundColor Green
+Set-GitHubEnvironment -Repository $repoName -EnvironmentName $environmentName
+Set-GitHubEnvironmentSecret -Repository $repoName -EnvironmentName $environmentName -Name 'PAC_DEPLOY_AZURE_TENANT_ID' -Value $tenantId
+Set-GitHubEnvironmentSecret -Repository $repoName -EnvironmentName $environmentName -Name 'PAC_DEPLOY_CLIENT_ID' -Value $applicationId
+Set-GitHubEnvironmentSecret -Repository $repoName -EnvironmentName $environmentName -Name 'PAC_DEPLOY_ENV_URL' -Value $environmentUrl
 
 Write-Host "Adding Key Vault access to the SPN so that Key Vault Environment Variables in Dataverse can be read" -ForegroundColor Green
 # This prevents the solution import error 'The reason given was: User is not authorized to read secrets from '/subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/..../secrets/...-development-payments-api-client-secret' resource.
@@ -56,9 +66,9 @@ az role assignment create --role "Key Vault Secrets User" --assignee $applicatio
 az role assignment create --role "Key Vault Reader" --assignee $applicationId --scope /subscriptions/$($envVars.AZURE_SUBSCRIPTION_ID)/resourceGroups/$($envVars.AZURE_RESOURCE_GROUP)/providers/Microsoft.KeyVault/vaults/$($envVars.AZURE_KEY_VAULT_NAME) >> $null
 
 Write-Host @"
-Add the following GitHub environment secrets to the environment '$environmentName' in the repo '$repoName'
+GitHub environment '$environmentName' has been configured in '$repoName' with these PAC deployment secrets:
 
-    PAC_DEPLOY_AZURE_TENANT_ID = $tenantId
-    PAC_DEPLOY_CLIENT_ID = $applicationId
-    PAC_DEPLOY_ENV_URL = $environmentUrl
+    PAC_DEPLOY_AZURE_TENANT_ID
+    PAC_DEPLOY_CLIENT_ID
+    PAC_DEPLOY_ENV_URL
 "@ -ForegroundColor Cyan

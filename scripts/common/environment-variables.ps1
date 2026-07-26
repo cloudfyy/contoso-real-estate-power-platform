@@ -183,6 +183,113 @@ function GetRequiredValue {
     return $enteredValue
 }
 
+function Get-PowerPlatformEnvironmentUrl {
+    if (-not (Get-Command 'pac' -ErrorAction SilentlyContinue)) {
+        return ''
+    }
+
+    $environmentDetailsJson = pac env who --json 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($environmentDetailsJson -join ''))) {
+        return ''
+    }
+
+    $environmentDetails = $environmentDetailsJson | ConvertFrom-Json
+    return ([string]$environmentDetails.OrgUrl).TrimEnd('/')
+}
+
+function Add-GitHubEnvironmentFederatedCredential {
+    param (
+        [string]$ApplicationId,
+        [string]$Repository,
+        [string]$EnvironmentName,
+        [string]$CredentialName
+    )
+
+    $subject = "repo:${Repository}:environment:${EnvironmentName}"
+    if ([string]::IsNullOrWhiteSpace($CredentialName)) {
+        $CredentialName = "github-$($EnvironmentName -replace '[^A-Za-z0-9-]', '-')"
+    }
+
+    $federatedCredentialsJson = az ad app federated-credential list --id $ApplicationId --output json 2>&1
+    AssertCommandSucceeded -CommandDescription "List federated credentials for '$ApplicationId'"
+
+    $federatedCredentials = @($federatedCredentialsJson | ConvertFrom-Json)
+    $credentialWithSubject = $federatedCredentials | Where-Object { $_.subject -eq $subject } | Select-Object -First 1
+    if ($null -ne $credentialWithSubject) {
+        Write-Host "Federated credential already exists for subject '$subject'." -ForegroundColor Green
+        return
+    }
+
+    $credentialWithName = $federatedCredentials | Where-Object { $_.name -eq $CredentialName } | Select-Object -First 1
+    if ($null -ne $credentialWithName) {
+        throw "Federated credential '$CredentialName' already exists on application '$ApplicationId' but its subject is '$($credentialWithName.subject)', expected '$subject'. Update or remove that credential in Entra ID, then rerun this script."
+    }
+
+    $federatedCredential = [ordered]@{
+        name = $CredentialName
+        issuer = 'https://token.actions.githubusercontent.com'
+        subject = $subject
+        description = "GitHub access for the environment $EnvironmentName and repo $Repository"
+        audiences = @('api://AzureADTokenExchange')
+    }
+    $federatedCredentialJson = $federatedCredential | ConvertTo-Json -Depth 5 -Compress
+    $federatedCredentialPath = Join-Path ([System.IO.Path]::GetTempPath()) "$CredentialName.json"
+    Set-Content -Path $federatedCredentialPath -Value $federatedCredentialJson -Encoding utf8
+
+    try {
+        InvokeExternalCommand -CommandDescription "Create federated credential '$CredentialName'" -ScriptBlock {
+            az ad app federated-credential create --id $ApplicationId --parameters $federatedCredentialPath --output none
+        }
+    }
+    finally {
+        Remove-Item -Path $federatedCredentialPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function CheckGitHubCLI {
+    AssertCommandExists -Name 'gh'
+
+    InvokeExternalCommand -CommandDescription 'Check GitHub CLI authentication' -ScriptBlock {
+        gh auth status --hostname github.com
+    }
+}
+
+function Set-GitHubEnvironment {
+    param (
+        [string]$Repository,
+        [string]$EnvironmentName
+    )
+
+    InvokeExternalCommand -CommandDescription "Create or update GitHub environment '$EnvironmentName'" -ScriptBlock {
+        gh api --method PUT "repos/$Repository/environments/$EnvironmentName" --silent
+    }
+}
+
+function Set-GitHubRepositoryVariable {
+    param (
+        [string]$Repository,
+        [string]$Name,
+        [string]$Value
+    )
+
+    InvokeExternalCommand -CommandDescription "Set repository variable '$Name'" -ScriptBlock {
+        gh variable set $Name --repo $Repository --body $Value
+    }
+}
+
+function Set-GitHubEnvironmentSecret {
+    param (
+        [string]$Repository,
+        [string]$EnvironmentName,
+        [string]$Name,
+        [string]$Value
+    )
+
+    InvokeExternalCommand -CommandDescription "Set environment secret '$Name'" -ScriptBlock {
+        $Value | gh secret set $Name --repo $Repository --env $EnvironmentName
+    }
+}
+
 function CheckAZCLI {
     Write-Progress -Activity "Checking access via Azure CLI..."
     try {
