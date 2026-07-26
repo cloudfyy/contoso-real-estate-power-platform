@@ -207,7 +207,7 @@ function Add-PowerPlatformApplicationUser {
     param (
         [string]$EnvironmentUrl,
         [string]$ApplicationId,
-        [string]$Role = 'System Administrator'
+        [string]$Role = 'System Customizer'
     )
 
     InvokeExternalCommand -CommandDescription "Assign Power Platform application user '$ApplicationId' to '$EnvironmentUrl'" -ScriptBlock {

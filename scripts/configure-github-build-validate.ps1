@@ -9,7 +9,9 @@ param (
     [string]$PacDeployAzureTenantId,
     [string]$PacDeployClientId,
     [string]$PacDeployEnvUrl,
+    [string]$PowerPlatformApplicationUserRole = 'System Customizer',
     [string]$SolutionsConfigPath,
+    [switch]$UseCurrentPacEnvironment,
     [switch]$SkipSolutionCheckerSecrets
 )
 
@@ -44,8 +46,12 @@ if ([string]::IsNullOrWhiteSpace($PacDeployClientId) -and -not [string]::IsNullO
     $PacDeployClientId = $envVars.ENTRA_API_CLIENT_APP_ID
 }
 
-if ([string]::IsNullOrWhiteSpace($PacDeployEnvUrl)) {
+if ([string]::IsNullOrWhiteSpace($PacDeployEnvUrl) -and $UseCurrentPacEnvironment) {
     $PacDeployEnvUrl = Get-PowerPlatformEnvironmentUrl
+}
+
+if (-not $SkipSolutionCheckerSecrets -and [string]::IsNullOrWhiteSpace($PacDeployEnvUrl)) {
+    throw "PAC_DEPLOY_ENV_URL is required. Pass -PacDeployEnvUrl with the Core development Power Platform environment URL, or pass -UseCurrentPacEnvironment to use the current pac environment selection."
 }
 
 if (-not [string]::IsNullOrWhiteSpace($SolutionsConfigPath)) {
@@ -83,7 +89,7 @@ if ($PSCmdlet.ShouldProcess($Repository, 'configure GitHub Build and Validate pr
         Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_CLIENT_ID' -Value $clientId
         Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_ENV_URL' -Value $environmentUrl
 
-        Add-PowerPlatformApplicationUser -EnvironmentUrl $environmentUrl -ApplicationId $clientId
+        Add-PowerPlatformApplicationUser -EnvironmentUrl $environmentUrl -ApplicationId $clientId -Role $PowerPlatformApplicationUserRole
     }
 
     if (-not [string]::IsNullOrWhiteSpace($clientId)) {

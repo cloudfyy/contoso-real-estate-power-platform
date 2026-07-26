@@ -37,7 +37,7 @@ $applicationId = az ad sp list --display-name $spnName --query "[0].appId" -o ts
 if ($applicationId)
 {
     Write-Host "Adding existing SPN '$spnName' and adding to '$environmentUrl'" -ForegroundColor Green
-    Add-PowerPlatformApplicationUser -EnvironmentUrl $environmentUrl -ApplicationId $applicationId
+    Add-PowerPlatformApplicationUser -EnvironmentUrl $environmentUrl -ApplicationId $applicationId -Role 'System Administrator'
 }
 else
 {

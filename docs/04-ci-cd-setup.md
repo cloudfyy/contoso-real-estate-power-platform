@@ -33,20 +33,23 @@ Before running `Build` or `Validate`, configure the repository settings used by 
 Run the helper script once after `azd provision` or `azd up` to configure the GitHub settings required by `Build`:
 
 ```powershell
-./scripts/configure-github-build-validate.ps1 -azureEnv development
+./scripts/configure-github-build-validate.ps1 `
+    -azureEnv development `
+    -PacDeployEnvUrl 'https://org123.crm.dynamics.com'
 ```
 
-The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repository. It generates `SOLUTIONS_CONFIG` from the solution package definitions in `scripts/common/solution-packages.ps1`, reads `AZURE_TENANT_ID` and `ENTRA_API_CLIENT_APP_ID` from the selected azd environment, and reads the Power Platform environment URL from the current `pac env who` selection. You can still override any value explicitly:
+Use the Core development Power Platform environment URL for `-PacDeployEnvUrl` when configuring the shared Build workflow Solution Checker environment. The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repository. It generates `SOLUTIONS_CONFIG` from the solution package definitions in `scripts/common/solution-packages.ps1`, and reads `AZURE_TENANT_ID` and `ENTRA_API_CLIENT_APP_ID` from the selected azd environment. You can still override any value explicitly:
 
 ```powershell
 ./scripts/configure-github-build-validate.ps1 `
     -azureEnv development `
     -PacDeployAzureTenantId '<tenant-id>' `
     -PacDeployClientId '<application-client-id>' `
-    -PacDeployEnvUrl 'https://org123.crm.dynamics.com'
+    -PacDeployEnvUrl 'https://org123.crm.dynamics.com' `
+    -PowerPlatformApplicationUserRole 'System Customizer'
 ```
 
-The helper script adds the PAC client application as a Power Platform application user in the selected environment and creates or confirms the GitHub federated credentials for the `solution-checker` environment, including the repository slug subject and the ID-qualified subject emitted by GitHub Actions/PAC.
+The helper script adds the PAC client application as a Power Platform application user in the selected environment and creates or confirms the GitHub federated credentials for the `solution-checker` environment, including the repository slug subject and the ID-qualified subject emitted by GitHub Actions/PAC. The application user role defaults to `System Customizer`; pass `-PowerPlatformApplicationUserRole` only if your environment requires a different role.
 
 The helper script covers the Build/Validate prerequisites only:
 
