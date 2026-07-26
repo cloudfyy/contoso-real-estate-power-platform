@@ -1,11 +1,27 @@
 # Setting up CI/CD
 
-This project is setup for GitHub Continuous integration and deployment workflows.
+This project is set up for GitHub continuous integration and deployment workflows.
 
-The workflows uses the Power Platform CLI (pac) and connects using GitHub [federated identity credentials](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp).
+The Power Platform deployment workflows use the Power Platform CLI (pac) and connect using GitHub [federated identity credentials](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp).
 
 > [!IMPORTANT]
-> You can connect to Power Platform using a Application ID and Secret, however using federated identity credentials avoids the need to store client secrets in GitHub.
+> You can connect to Power Platform using an Application ID and Secret, but federated identity credentials avoid the need to store client secrets in GitHub.
+
+## Workflow scope
+
+The GitHub workflows cover two parts of the repository:
+
+- **Power Platform solution CI/CD** - The `Build`, `Validate`, and `Deploy` workflows build solution packages, run Power Platform Solution Checker, create releases, and import managed solutions into target Power Platform environments.
+- **Azure API and infrastructure validation** - The reusable `_Validate Azure API and Infrastructure` workflow restores and builds the Payments API .NET solution with .NET 10, then compiles `infra/main.bicep` to validate the Bicep template. This reusable workflow is called by both `Build` and `Validate`.
+
+Azure resource provisioning and Payments API deployment are still performed through Azure Developer CLI (`azd`) using `azure.yaml`:
+
+```powershell
+azd up --environment development
+azd deploy payments-api --environment development
+```
+
+The GitHub validation workflow compiles the locked-down infrastructure template, but it does not deploy Azure resources or connect directly to private SQL, Key Vault, or Storage endpoints.
 
 For the deployment workflow to deploy to each environment the following setup is required:
 
@@ -48,7 +64,7 @@ pac auth create --githubFederated --tenant ${{ secrets.PAC_DEPLOY_AZURE_TENANT_I
 ```
 Federated credentials must be added to Entra ID to establish a trust.
 
-👉 To setup these credentials, drag the script `/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1` into your VSCode termainal and press **ENTER**.
+👉 To set up these credentials, drag the script `/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1` into your VSCode terminal and press **ENTER**.
 
 To perform these steps manually you can use the following steps:
 1. Authenticate the [Power Platform CLI](https://marketplace.visualstudio.com/items?itemName=microsoft-IsvExpTools.powerplatform-vscode) and select the target Power Platform environment:
@@ -63,7 +79,7 @@ To perform these steps manually you can use the following steps:
 
 1. Install the Azure CLI by following the instructions provided in the [official Azure CLI documentation for your operating system](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
 
-1. Drag the the script [/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1]([/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1) into your VSCode terminal, and press **ENTER** to setup the GitHub CI/CD authentication. 
+1. Drag the script [/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1](/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1) into your VSCode terminal, and press **ENTER** to set up the GitHub CI/CD authentication. 
 
 ## Manual Steps
 The script performs the following steps for you:
@@ -121,7 +137,7 @@ The script performs the following steps for you:
 
 👉 To setup the Deployment Config, drag the script `src\core\solution\deployment-scripts\4-github-environment-create-deployment-settings.ps1` into your VSCode terminal and press **ENTER**.
 
-This script will prompt you to create an environment variable called `PAC_DEPLOY_CONFIG` for each envrionment.
+This script will prompt you to create an environment variable called `PAC_DEPLOY_CONFIG` for each environment.
 
 The variable must be in the form:
 
@@ -148,7 +164,7 @@ The variable must be in the form:
 This script will also prompt you to create an environment secret called `PLUGIN_MANAGED_IDENTITY_APP_ID` containing the Application ID of the Payment API Client that the C# Plugin Virtual Table Provider will use to connect to the Payment API. This is injected into the solution before it is deployed because at this time the Managed Identity Application Id and Tenant Id are not configurable using `deploymentSettings.json`.
 
 ## Set repository variables
-A responsitory variable is needed to control which solutions are built.
+A repository variable is needed to control which solutions are built.
 
 1. Navigate to **GitHub** -> **Settings** -> **Secrets and Variables** -> **Actions** -> **Variable Tab**
 1. Select **New repository variable**
