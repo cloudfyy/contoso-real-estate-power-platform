@@ -272,7 +272,7 @@ NOTE: If the client application is not configured for multi-tenant then you will
 
 ## ✅Make your changes and then sync to create a change set
 
-1. Once you have made changes to the solution using `make.powerapps.com`, you can create a changeset using the following:
+1. Once you have made changes to the solution using [make.powerapps.com](https://make.powerapps.com/), you can create a changeset using the following:
 
    ```powershell
    ./src/portal/solution/sync.ps1

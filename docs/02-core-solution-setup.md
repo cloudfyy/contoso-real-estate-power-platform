@@ -132,7 +132,7 @@ Then manually add the Payments API client secret to both custom connectors:
 
 ## ✅Make changes and sync
 
-1. Once you have made changes to the solution using make.powerapps.com, you can create a changeset using the following:
+1. Once you have made changes to the solution using [make.powerapps.com](https://make.powerapps.com/), you can create a changeset using the following:
 
     ```powershell
     ./src/core/solution/sync.ps1

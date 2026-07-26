@@ -706,9 +706,7 @@ Important: create these connections in the same Power Platform environment where
 1. Repeat for all connection references.
 1. Navigate to Cloud Flows and select **Turn on** for each flow that is in the Off Status. (This isn't needed in CI/CD since the connection references are configured using the `deploymentSettings.json` and the flows are automatically turned on)
 
-   ![Cloud Flows Turn on menu](./assets/cloud-flows-turn-on.png)
-
-   
+   ![Cloud Flows Turn on menu](./assets/cloud-flows-turn-on.png)   
 
 > [!WARNING]
 > If creating the `Contoso Stripe API` connection fails with `AADSTS50011` (redirect URI mismatch), use the following fix.
@@ -730,14 +728,14 @@ Important: create these connections in the same Power Platform environment where
 
 ### 👉Start an AI Builder trial
 
-1. Inside make.powerapps.com, navigate to AI hub in the left navigation menu (under ...)
+1. Inside [make.powerapps.com](https://make.powerapps.com/), navigate to AI hub in the left navigation menu (under ...)
 1. Select Start free trial on the banner message
 
 ![AI builder trial](./assets/ai-builder-trial.png)
 
 ### 🌐Activate Power Pages Site
 
-1. Open the Contoso Real Estate Portal inside make.powerapps.com, navigate to Site.
+1. Open the Contoso Real Estate Portal inside [make.powerapps.com](https://make.powerapps.com/), navigate to Site.
 
 1. Select the Contoso Real Estate Portal. This will take you to Power Pages.
 
