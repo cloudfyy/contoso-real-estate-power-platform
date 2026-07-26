@@ -21,7 +21,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
     enabledForTemplateDeployment: enabledForTemplateDeployment
     // RBAC Authorization requires that you have Key Vault Administrator and User Access Administrator roles on the subscription
     // Important for using keyvault with managed identity and environment variables in Power Platform
-    enableRbacAuthorization: true 
+    enableRbacAuthorization: true
+    publicNetworkAccess: 'Disabled'
     
   }
 }
