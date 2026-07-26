@@ -147,10 +147,16 @@ function AssertCommandExists {
 
 function AssertCommandSucceeded {
     param (
-        [string]$CommandDescription
+        [string]$CommandDescription,
+        [object]$CommandOutput
     )
 
     if ($LASTEXITCODE -ne 0) {
+        $output = ($CommandOutput | Out-String).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($output)) {
+            throw "$CommandDescription failed with exit code $LASTEXITCODE. $output"
+        }
+
         throw "$CommandDescription failed with exit code $LASTEXITCODE."
     }
 }
@@ -217,7 +223,7 @@ function Add-GitHubEnvironmentFederatedCredential {
     )
 
     $repositoryJson = gh api "repos/$Repository" 2>&1
-    AssertCommandSucceeded -CommandDescription "Get GitHub repository metadata for '$Repository'"
+    AssertCommandSucceeded -CommandDescription "Get GitHub repository metadata for '$Repository'" -CommandOutput $repositoryJson
     $repositoryInfo = $repositoryJson | ConvertFrom-Json
     $owner = [string]$repositoryInfo.owner.login
     $ownerId = [string]$repositoryInfo.owner.id
@@ -232,7 +238,7 @@ function Add-GitHubEnvironmentFederatedCredential {
     }
 
     $federatedCredentialsJson = az ad app federated-credential list --id $ApplicationId --output json 2>&1
-    AssertCommandSucceeded -CommandDescription "List federated credentials for '$ApplicationId'"
+    AssertCommandSucceeded -CommandDescription "List federated credentials for '$ApplicationId'" -CommandOutput $federatedCredentialsJson
 
     $federatedCredentials = @($federatedCredentialsJson | ConvertFrom-Json)
     foreach ($credentialSubject in $credentialSubjects) {
