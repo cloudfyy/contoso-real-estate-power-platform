@@ -79,10 +79,21 @@ else {
         audiences = @("api://azureadtokenexchange")
     } | ConvertTo-Json -Compress
 
-    az ad app federated-credential create --id $ManagedIdentityPrincipal --parameters $federatedCredentialParameters >> $null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Unable to create federated credential '$federatedCredentialName' for application '$ManagedIdentityPrincipal'."
-        exit 1
+    $federatedCredentialParametersFile = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("federated-credential-$federatedCredentialName.json")
+    try {
+        # Use a JSON file to avoid PowerShell argument parsing issues with quoted JSON strings.
+        Set-Content -Path $federatedCredentialParametersFile -Value $federatedCredentialParameters -Encoding utf8
+
+        az ad app federated-credential create --id $ManagedIdentityPrincipal --parameters $federatedCredentialParametersFile >> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Unable to create federated credential '$federatedCredentialName' for application '$ManagedIdentityPrincipal'."
+            exit 1
+        }
+    }
+    finally {
+        if (Test-Path -Path $federatedCredentialParametersFile) {
+            Remove-Item -Path $federatedCredentialParametersFile -Force
+        }
     }
 }
 
