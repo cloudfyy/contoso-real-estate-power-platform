@@ -3,16 +3,14 @@
 
 $ErrorActionPreference = 'Stop'
 
+. "$PSScriptRoot\common\payments-api-function-helpers.ps1"
+
 function Get-RequiredEnvironmentVariable {
 	param (
 		[string]$Name
 	)
 
-	$value = [Environment]::GetEnvironmentVariable($Name)
-	if ([string]::IsNullOrWhiteSpace($value)) {
-		throw "Required environment variable '$Name' was not set. Run this hook from azd after provisioning."
-	}
-
+	$value = Get-RequiredValue ([Environment]::GetEnvironmentVariable($Name)) $Name
 	return $value
 }
 
@@ -42,24 +40,14 @@ function Test-ClientSecret {
 		return $false
 	}
 
-	$body = @{
-		client_id = $ClientAppId
-		client_secret = $ClientSecret
-		grant_type = 'client_credentials'
-		scope = "api://$ApiAppId/.default"
-	}
-	$encodedBody = ($body.GetEnumerator() | ForEach-Object {
-		'{0}={1}' -f [System.Net.WebUtility]::UrlEncode($_.Key), [System.Net.WebUtility]::UrlEncode($_.Value)
-	}) -join '&'
-
 	try {
-		$tokenResponse = Invoke-RestMethod `
-			-Method Post `
-			-Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" `
-			-ContentType 'application/x-www-form-urlencoded' `
-			-Body $encodedBody
+		$token = Get-PaymentsApiAccessToken `
+			-TenantId $TenantId `
+			-ApiAppId $ApiAppId `
+			-ApiClientAppId $ClientAppId `
+			-ApiClientSecret $ClientSecret
 
-		return -not [string]::IsNullOrWhiteSpace($tokenResponse.access_token)
+		return -not [string]::IsNullOrWhiteSpace($token)
 	}
 	catch {
 		Write-Host "Existing Entra client secret is not usable. $($_.Exception.Message)" -ForegroundColor Yellow
