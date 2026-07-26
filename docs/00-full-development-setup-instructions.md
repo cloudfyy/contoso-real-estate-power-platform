@@ -775,6 +775,7 @@ When flows that are added to Power Pages are deployed, the trigger is not always
 1. Open your site in [Power Pages](https://make.powerpages.microsoft.com/).
 1. In the site editor, select **Set up** -> **Integrations** -> **Cloud flows**.
 1. For each flow in the site, select **Register flow**.
+   ![Register Flow](./assets/register-flow.png)
 1. Power Pages will re-configure the trigger to point at the cloud flow in the current environment.
 
 > [!TIP]
