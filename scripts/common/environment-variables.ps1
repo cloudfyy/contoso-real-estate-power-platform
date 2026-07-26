@@ -203,6 +203,18 @@ function Get-PowerPlatformEnvironmentUrl {
     return ([string]$environmentDetails.OrgUrl).TrimEnd('/')
 }
 
+function Add-PowerPlatformApplicationUser {
+    param (
+        [string]$EnvironmentUrl,
+        [string]$ApplicationId,
+        [string]$Role = 'System Administrator'
+    )
+
+    InvokeExternalCommand -CommandDescription "Assign Power Platform application user '$ApplicationId' to '$EnvironmentUrl'" -ScriptBlock {
+        pac admin assign-user --environment $EnvironmentUrl --application-user --user $ApplicationId --role $Role
+    }
+}
+
 function Add-GitHubEnvironmentFederatedCredential {
     param (
         [string]$ApplicationId,

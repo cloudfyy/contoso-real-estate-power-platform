@@ -26,6 +26,9 @@ AssertCommandExists -Name 'az'
 
 CheckGitHubCLI
 CheckAZCLI
+if (-not $SkipSolutionCheckerSecrets) {
+    CheckPACCLI
+}
 
 if ([string]::IsNullOrWhiteSpace($Repository)) {
     $Repository = GetGitHubRepositoryName -remoteNames @($Remote)
@@ -79,6 +82,8 @@ if ($PSCmdlet.ShouldProcess($Repository, 'configure GitHub Build and Validate pr
         Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_AZURE_TENANT_ID' -Value $tenantId
         Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_CLIENT_ID' -Value $clientId
         Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $SolutionCheckerEnvironment -Name 'PAC_DEPLOY_ENV_URL' -Value $environmentUrl
+
+        Add-PowerPlatformApplicationUser -EnvironmentUrl $environmentUrl -ApplicationId $clientId
     }
 
     if (-not [string]::IsNullOrWhiteSpace($clientId)) {
