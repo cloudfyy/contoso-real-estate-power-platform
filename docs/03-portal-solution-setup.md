@@ -143,10 +143,62 @@ Important: create these connections in the same Power Platform environment where
 1. Open **Connection References**
 1. Select each connection reference and select **+ New connection** under the **Connection** dropdown.
 1. Search for the Connector type (Dataverse or Contoso Stripe API) and select the **+** add button, and then **Create**.
+    - For **Microsoft Dataverse** (Connect to Microsoft Dataverse dialog):
+         ![Dataverse connector options](./assets/connection-dataverse-create-dialog.png)
+
+         In the connector list, choose the **green Microsoft Dataverse** connector (the newer connector).
+
+       - `Display name (optional)`: use a clear name such as `CRE Portal Dev - Dataverse - <your-user>`.
+       - `Authentication Type`: keep the default `Oauth`.
+       - Select **Create** and complete sign-in with the same user that has access to the current environment.
+
+         ![Connect to Microsoft Dataverse](./assets/connection-dataverse-connector-picker.png)
+
+      Recommended values shown in this dialog:
+      - Use the current environment shown at the top right in Power Apps (for example, `CRE Portal Dev (<your-user>)`).
+      - Keep `Authentication Type` as `Oauth`.
+      - Use a descriptive display name such as `CRE Portal Dev - Dataverse - <your-user>`.
+    - For **Contoso Stripe API** (custom connector security dialog):
+         ![Stripe connector options](./assets/connection-stripe-connector-list.png)
+
+         In the connector list, choose **Contoso Stripe API** (custom connector).
+
+         ![Connect to Contoso Stripe API](./assets/connection-stripe-create-dialog.png)
+
+         Recommended values shown in this dialog:
+         - Use the current environment shown at the top right in Power Apps (for example, `CRE Portal Dev (<your-user>)`).
+         - `Display name (optional)`: use a clear name such as `CRE Portal Dev - Contoso Stripe API - <your-user>`.
+         - `Authentication Type`: keep the default `OAuth Connection`.
+         - Select **Create** and complete the sign-in/consent prompt.
+
+         Before creating this connection, make sure the connector security page is already updated with:
+       - `Client ID`: `ENTRA_API_CLIENT_APP_ID` from your `.azure/<env>/.env`.
+       - `Client secret`: run `./infra/scripts/show-payments-api-client-secret.ps1 -azureEnv <your-azure-env>` and paste the returned secret.
+       - `Authorization URL`: `https://login.microsoftonline.com`.
+       - `Tenant ID`: `AZURE_TENANT_ID` from your `.azure/<env>/.env`.
+       - Save and select **Update connector** before creating the connection.
 1. For production, SPNs will be used, however for development you can use your own account.
 1. Return to the Connection References panel, select **Refresh**, and select the connection you have created (it will show as your login name)
 1. Repeat for all connection references.
 1. Navigate to Cloud Flows and select **Turn on** for each flow. (This isn't needed in CI/CD since the connection references are configured using the deploymentSettings.json and the flows are automatically turned on)
+
+> [!WARNING]
+> If creating the `Contoso Stripe API` connection fails with `AADSTS50011` (redirect URI mismatch), use the following fix.
+>
+> ![AADSTS50011 popup while creating Stripe connection](./assets/connection-stripe-aadsts50011-popup.png)
+> ![AADSTS50011 full-page error details](./assets/connection-stripe-aadsts50011-fullpage.png)
+>
+> 1. Rerun `src/core/solution/deployment-scripts/2-post-deployment-setup.ps1`.
+> 1. When prompted for redirect URLs, paste the redirect URL from each connector security page:
+>    - `Contoso Payments API`
+>    - `Contoso Stripe API`
+> 1. Ensure each redirect URL is copied exactly as shown in the connector UI.
+> 1. Retry creating the `Contoso Stripe API` connection.
+>
+> Manual fallback in Entra ID:
+> 1. Open the app registration using `ENTRA_API_CLIENT_APP_ID`.
+> 1. Go to **Authentication** and add the missing redirect URL shown in the error message.
+> 1. Save and retry connection creation.
 
 ### 🌐Activate Power Pages Site
 
