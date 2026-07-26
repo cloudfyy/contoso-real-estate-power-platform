@@ -74,6 +74,8 @@ To start contributing, you'll need to set up your developer environment. Here's 
 
 1. Follow the instructions when running the script [1-deploy-to-development-environment.ps1](/src/core/solution/deployment-scripts/1-deploy-to-development-environment.ps1). The script asks whether to download solution packages from GitHub releases in your own `origin` repository or build them locally. It clears `temp_releases` before preparing packages. If you choose GitHub releases, it downloads `ContosoRealEstateCustomControls_managed.zip` and `ContosoRealEstateCore.zip`, then skips local solution build. If you choose local build, the script warns that the build can take up to 20 minutes, then copies the generated managed dependency zip into `temp_releases` and deploys the locally built Core solution.
 
+   During import, it is expected to see: `Data Source secrets are not included in solutions. You'll need to edit your data sources to add secrets back following solution import.` This means the custom connectors were imported, but the OAuth client secret must be added manually.
+
 ### Manually building and deploying the solution
 
 1. To build the solution use the following from a terminal inside VS Code:
@@ -115,6 +117,18 @@ Run the following PowerShell and follow the instructions carefully:
 ```powershell
 ./src/core/solution/deployment-scripts/2-post-deployment-setup.ps1
 ```
+
+Then manually add the Payments API client secret to both custom connectors:
+
+1. Display the current Payments API client secret:
+
+   ```powershell
+   ./infra/scripts/show-payments-api-client-secret.ps1 -azureEnv <your-azure-env>
+   ```
+
+1. In make.powerautomate.com, open each custom connector (`Contoso Payments API` and `Contoso Stripe API`) and edit **Security**.
+
+1. Paste the displayed secret into the OAuth client secret field, then save and update the connector.
 
 ## ✅Make changes and sync
 
