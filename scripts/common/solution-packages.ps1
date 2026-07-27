@@ -1,18 +1,5 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-function Get-RepositoryRoot {
-    $currentDirectory = $PSScriptRoot
-    while ($currentDirectory -ne [System.IO.Directory]::GetDirectoryRoot($currentDirectory)) {
-        if (Test-Path -Path (Join-Path -Path $currentDirectory -ChildPath '.git')) {
-            return (Get-Item -Path $currentDirectory).FullName
-        }
-
-        $currentDirectory = Split-Path -Path $currentDirectory -Parent
-    }
-
-    throw 'Unable to find repository root.'
-}
-
 function Get-GitHubRepositoryName {
     param (
         [string]$RemoteName

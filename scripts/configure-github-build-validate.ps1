@@ -24,6 +24,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
 
+$envVars = GetRepositoryEnvironmentVariables -azureEnv $azureEnv -scriptDirectory $repoRoot
+
 AssertCommandExists -Name 'git'
 AssertCommandExists -Name 'az'
 
@@ -37,8 +39,6 @@ if ([string]::IsNullOrWhiteSpace($Repository)) {
     $Repository = GetGitHubRepositoryName -remoteNames @($Remote)
 }
 
-$envVars = GetRepositoryEnvironmentVariables -azureEnv $azureEnv -scriptDirectory $repoRoot
-
 if ([string]::IsNullOrWhiteSpace($PacDeployAzureTenantId) -and -not [string]::IsNullOrWhiteSpace($envVars.AZURE_TENANT_ID)) {
     $PacDeployAzureTenantId = $envVars.AZURE_TENANT_ID
 }
@@ -49,6 +49,10 @@ if ([string]::IsNullOrWhiteSpace($PacDeployClientId) -and -not [string]::IsNullO
 
 if ([string]::IsNullOrWhiteSpace($PacDeployEnvUrl) -and $UseCurrentPacEnvironment) {
     $PacDeployEnvUrl = Get-PowerPlatformEnvironmentUrl
+}
+
+if (-not $SkipSolutionCheckerSecrets -and [string]::IsNullOrWhiteSpace($PacDeployEnvUrl)) {
+    $PacDeployEnvUrl = Select-PowerPlatformEnvironmentUrl -Purpose 'Core Dev Dataverse environment for Build Solution Checker'
 }
 
 if (-not $SkipSolutionCheckerSecrets -and [string]::IsNullOrWhiteSpace($PacDeployEnvUrl)) {

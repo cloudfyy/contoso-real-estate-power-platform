@@ -34,11 +34,10 @@ Run the helper script once after `azd provision` or `azd up` to configure the Gi
 
 ```powershell
 ./scripts/configure-github-build-validate.ps1 `
-    -azureEnv development `
-    -PacDeployEnvUrl 'https://<core-dev-org>.crm.dynamics.com'
+    -azureEnv development
 ```
 
-Use the Core Dev Dataverse environment URL for `-PacDeployEnvUrl` when configuring the shared Build workflow Solution Checker environment. This value becomes the `PAC_DEPLOY_ENV_URL` secret on the `solution-checker` GitHub environment. Do not use the Portal Dev URL or rely on the current local PAC environment unless you intentionally pass `-UseCurrentPacEnvironment`. The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repository. It generates `SOLUTIONS_CONFIG` from the solution package definitions in `scripts/common/solution-packages.ps1`, and reads `AZURE_TENANT_ID` and `ENTRA_API_CLIENT_APP_ID` from the selected azd environment. You can still override any value explicitly:
+When `-PacDeployEnvUrl` is not provided, the script lists the Power Platform environments visible to your current PAC user and prompts you to select the Core Dev Dataverse environment. This value becomes the `PAC_DEPLOY_ENV_URL` secret on the `solution-checker` GitHub environment. Do not select the Portal Dev environment or rely on the current local PAC environment unless you intentionally pass `-UseCurrentPacEnvironment`. The script uses the GitHub CLI (`gh`) and the `origin` remote to detect the repository. It generates `SOLUTIONS_CONFIG` from the solution package definitions in `scripts/common/solution-packages.ps1`, and reads `AZURE_TENANT_ID` and `ENTRA_API_CLIENT_APP_ID` from the selected azd environment. You can still override any value explicitly for non-interactive runs:
 
 ```powershell
 ./scripts/configure-github-build-validate.ps1 `
@@ -83,7 +82,7 @@ Approvals are used to gate each environment deployment.
 
 ## Adding Environment Protection Rules
 
-Perform the following steps for each deployment GitHub environment (`development`, `testing`, `production`) after running the federated credential script below. A minimum of `development` must be created to use the deployment workflow. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1` for the Build workflow.
+Perform the following steps for each deployment GitHub environment (`development`, `testing`, `production`) after running the deployment environment setup script below. A minimum of `development` must be created to use the deployment workflow. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1` for the Build workflow.
 
 1. Go to **Settings | Environments**
 1. Select **New environment**
@@ -99,9 +98,18 @@ GitHub workflow pac commands can connect using:
 ```
 pac auth create --githubFederated --tenant ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }} --applicationId ${{ secrets.PAC_DEPLOY_CLIENT_ID }} --environment ${{ secrets.PAC_DEPLOY_ENV_URL }}
 ```
-Federated credentials must be added to Entra ID to establish a trust. The deployment setup script creates or updates the GitHub environment, sets the PAC deployment secrets, creates or reuses the Entra ID application, creates or confirms the GitHub environment federated credential, and grants Key Vault access.
+Federated credentials must be added to Entra ID to establish a trust. The deployment setup script creates or updates the GitHub environment, sets the PAC deployment secrets and variables, creates or reuses the Entra ID application, adds it as an application user in the target Dataverse environment, and creates or confirms the GitHub environment federated credential.
 
-👉 To set up these credentials, drag the script `/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1` into your VSCode terminal and press **ENTER**.
+Run the deployment environment setup script once for each deployment GitHub environment:
+
+```powershell
+./scripts/configure-github-deployment-environment.ps1 `
+    -azureEnv development
+```
+
+When `-CorePacDeployEnvUrl` and `-PortalPacDeployEnvUrl` are not provided, the script lists the Power Platform environments visible to your current PAC user and prompts you to select both the Core Dev and Portal Dev Dataverse deployment targets. When `-PortalUrl` is not provided, the script lists Power Pages websites in the selected Portal Dev Dataverse environment and uses the selected website URL. This script configures the `development` GitHub deployment environment by default. It does not configure the `solution-checker` environment used by the Build workflow; that environment is configured by `scripts/configure-github-build-validate.ps1`.
+
+The deployment workflow imports `ContosoRealEstateCustomControls` and `ContosoRealEstateCore` into the Core target, then imports `ContosoRealEstateCustomControls`, `ContosoRealEstateCore`, and `ContosoRealEstatePortal` into the Portal target. This mirrors the manual development setup where the Portal environment also needs the managed dependency solutions installed.
 
 To perform these steps manually for a deployment environment, use the following steps:
 1. Authenticate the [Power Platform CLI](https://marketplace.visualstudio.com/items?itemName=microsoft-IsvExpTools.powerplatform-vscode) and select the target Power Platform environment:
@@ -116,11 +124,11 @@ To perform these steps manually for a deployment environment, use the following 
 
 1. Install the Azure CLI by following the instructions provided in the [official Azure CLI documentation for your operating system](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
 
-1. Drag the script [/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1](/src/core/solution/deployment-scripts/3-github-environment-add-fed-creds.ps1) into your VSCode terminal, and press **ENTER** to set up the GitHub CI/CD authentication. 
+1. Run [scripts/configure-github-deployment-environment.ps1](../scripts/configure-github-deployment-environment.ps1) to set up GitHub CI/CD authentication and deployment settings.
 
 ## Manual Steps
 
-The federated credential script performs the following steps for each deployment environment. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1`.
+The deployment environment setup script performs the following steps for each deployment environment. The `solution-checker` environment is configured by `scripts/configure-github-build-validate.ps1`.
 
 1. Log in to your Azure account by running the following command and following the prompts:
 
@@ -131,6 +139,7 @@ The federated credential script performs the following steps for each deployment
     This will open a browser window where you can authenticate with your Azure account.
 
 1. Create or reuse an Entra ID application for that GitHub environment.
+1. Add that application as a Dataverse application user in both the Core Dev and Portal Dev deployment targets.
 
     ```powershell
     $environmentName = "development"
@@ -174,13 +183,6 @@ The federated credential script performs the following steps for each deployment
     Remove-Item -Path $federatedCredentialPath -Force
     ```
 
-1. Grant the application access to the deployed Key Vault so Dataverse can read Key Vault-backed environment variable secrets during solution import:
-
-    ```powershell
-    az role assignment create --role "Key Vault Secrets User" --assignee $applicationId --scope /subscriptions/$($envVars.AZURE_SUBSCRIPTION_ID)/resourceGroups/$($envVars.AZURE_RESOURCE_GROUP)/providers/Microsoft.KeyVault/vaults/$($envVars.AZURE_KEY_VAULT_NAME)
-    az role assignment create --role "Key Vault Reader" --assignee $applicationId --scope /subscriptions/$($envVars.AZURE_SUBSCRIPTION_ID)/resourceGroups/$($envVars.AZURE_RESOURCE_GROUP)/providers/Microsoft.KeyVault/vaults/$($envVars.AZURE_KEY_VAULT_NAME)
-    ```
-
 1. Create or update the GitHub environment and set the PAC deployment secrets:
 
     ```powershell
@@ -192,9 +194,19 @@ The federated credential script performs the following steps for each deployment
 
 ## Deployment Settings
 
-👉 To setup the Deployment Config, drag the script `src\core\solution\deployment-scripts\4-github-environment-create-deployment-settings.ps1` into your VSCode terminal and press **ENTER**.
+The deployment environment setup script also generates and writes the deployment configuration for a deployment GitHub environment.
 
-This script will prompt you to create an environment variable called `PAC_DEPLOY_CONFIG` for each environment.
+The script sets these values on the selected GitHub deployment environment:
+
+- Environment variable: `PAC_DEPLOY_CONFIG`
+- Environment secret: `PLUGIN_MANAGED_IDENTITY_APP_ID`
+
+Run it once for each deployment GitHub environment:
+
+```powershell
+./scripts/configure-github-deployment-environment.ps1 `
+    -azureEnv development
+```
 
 The variable must be in the form:
 
@@ -218,7 +230,7 @@ The variable must be in the form:
 }
 ```
 
-This script will also prompt you to create an environment secret called `PLUGIN_MANAGED_IDENTITY_APP_ID` containing the Application ID of the Payment API Client that the C# Plugin Virtual Table Provider will use to connect to the Payment API. This is injected into the solution before it is deployed because at this time the Managed Identity Application Id and Tenant Id are not configurable using `deploymentSettings.json`.
+The script also sets an environment secret called `PLUGIN_MANAGED_IDENTITY_APP_ID` containing the Application ID of the Payment API Client that the C# Plugin Virtual Table Provider will use to connect to the Payment API. This is injected into the solution before it is deployed because at this time the Managed Identity Application Id and Tenant Id are not configurable using `deploymentSettings.json`.
 
 ## Set repository variables
 

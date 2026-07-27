@@ -1,5 +1,18 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+function Get-RepositoryRoot {
+    $currentDirectory = $PSScriptRoot
+    while ($currentDirectory -ne [System.IO.Directory]::GetDirectoryRoot($currentDirectory)) {
+        if (Test-Path -Path (Join-Path -Path $currentDirectory -ChildPath '.git')) {
+            return (Get-Item -Path $currentDirectory).FullName
+        }
+
+        $currentDirectory = Split-Path -Path $currentDirectory -Parent
+    }
+
+    throw 'Unable to find repository root.'
+}
+
 function GetRepositoryEnvironmentVariables {
     param (
         [string]$azureEnv,
@@ -203,6 +216,107 @@ function Get-PowerPlatformEnvironmentUrl {
     return ([string]$environmentDetails.OrgUrl).TrimEnd('/')
 }
 
+function Select-PowerPlatformEnvironmentUrl {
+    param (
+        [string]$Purpose = 'Power Platform environment'
+    )
+
+    AssertCommandExists -Name 'pac'
+
+    $environmentListJson = pac env list --json 2>&1
+    AssertCommandSucceeded -CommandDescription 'List Power Platform environments' -CommandOutput $environmentListJson
+
+    $environments = @($environmentListJson | ConvertFrom-Json)
+    if ($environments.Count -eq 0) {
+        throw 'No Power Platform environments were returned for the current PAC user.'
+    }
+
+    Write-Host "Select the ${Purpose}:" -ForegroundColor Yellow
+    for ($index = 0; $index -lt $environments.Count; $index++) {
+        $environment = $environments[$index]
+        $number = $index + 1
+        $friendlyName = [string]$environment.FriendlyName
+        $environmentUrl = [string]$environment.EnvironmentUrl
+        $environmentId = [string]$environment.EnvironmentIdentifier.Id
+        Write-Host "[$number] $friendlyName - $environmentUrl ($environmentId)" -ForegroundColor Yellow
+    }
+
+    while ($true) {
+        $selection = Read-Host "Enter a number for the $Purpose"
+        $selectionNumber = 0
+        if ([int]::TryParse($selection, [ref]$selectionNumber) -and $selectionNumber -ge 1 -and $selectionNumber -le $environments.Count) {
+            return ([string]$environments[$selectionNumber - 1].EnvironmentUrl).TrimEnd('/')
+        }
+
+        Write-Host "Invalid selection '$selection'. Enter a number from 1 to $($environments.Count)." -ForegroundColor Yellow
+    }
+}
+
+function Select-PowerPagesPortalUrl {
+    param (
+        [string]$EnvironmentUrl,
+        [string]$Purpose = 'Power Pages site'
+    )
+
+    AssertCommandExists -Name 'pac'
+
+    if ([string]::IsNullOrWhiteSpace($EnvironmentUrl)) {
+        throw 'A Dataverse environment URL is required to list Power Pages websites.'
+    }
+
+    $pagesListOutput = pac pages list --environment $EnvironmentUrl --verbose 2>&1
+    AssertCommandSucceeded -CommandDescription "List Power Pages websites for '$EnvironmentUrl'" -CommandOutput $pagesListOutput
+
+    $websites = @(
+        foreach ($line in $pagesListOutput) {
+            $trimmedLine = ([string]$line).Trim()
+            if ($trimmedLine -notmatch '^\[\d+\]\s+') {
+                continue
+            }
+
+            $columns = @($trimmedLine -split '\s{2,}')
+            if ($columns.Count -lt 5) {
+                continue
+            }
+
+            [pscustomobject]@{
+                Number = [int]($columns[0].Trim('[', ']'))
+                WebsiteId = [string]$columns[1]
+                PortalId = [string]$columns[2]
+                FriendlyName = [string]$columns[3]
+                PortalUrl = ([string]$columns[4]).TrimEnd('/')
+            }
+        }
+    )
+
+    if ($websites.Count -eq 0) {
+        throw "No Power Pages websites were returned for '$EnvironmentUrl'. Pass -PortalUrl explicitly if the site has not been created yet or is not visible to the current PAC user."
+    }
+
+    if ($websites.Count -eq 1) {
+        $website = $websites[0]
+        Write-Host "Using Power Pages website '$($website.FriendlyName)' - $($website.PortalUrl)" -ForegroundColor Green
+        return $website.PortalUrl
+    }
+
+    Write-Host "Select the ${Purpose}:" -ForegroundColor Yellow
+    for ($index = 0; $index -lt $websites.Count; $index++) {
+        $website = $websites[$index]
+        $number = $index + 1
+        Write-Host "[$number] $($website.FriendlyName) - $($website.PortalUrl) ($($website.WebsiteId))" -ForegroundColor Yellow
+    }
+
+    while ($true) {
+        $selection = Read-Host "Enter a number for the $Purpose"
+        $selectionNumber = 0
+        if ([int]::TryParse($selection, [ref]$selectionNumber) -and $selectionNumber -ge 1 -and $selectionNumber -le $websites.Count) {
+            return $websites[$selectionNumber - 1].PortalUrl
+        }
+
+        Write-Host "Invalid selection '$selection'. Enter a number from 1 to $($websites.Count)." -ForegroundColor Yellow
+    }
+}
+
 function Add-PowerPlatformApplicationUser {
     param (
         [string]$EnvironmentUrl,
@@ -315,6 +429,19 @@ function Set-GitHubRepositoryVariable {
 
     InvokeExternalCommand -CommandDescription "Set repository variable '$Name'" -ScriptBlock {
         gh variable set $Name --repo $Repository --body $Value
+    }
+}
+
+function Set-GitHubEnvironmentVariable {
+    param (
+        [string]$Repository,
+        [string]$EnvironmentName,
+        [string]$Name,
+        [string]$Value
+    )
+
+    InvokeExternalCommand -CommandDescription "Set environment variable '$Name'" -ScriptBlock {
+        gh variable set $Name --repo $Repository --env $EnvironmentName --body $Value
     }
 }
 

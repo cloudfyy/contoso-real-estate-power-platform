@@ -28,11 +28,6 @@ jobs:
       with:
           environment: 'development'
           stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade }}
-      secrets:
-        PAC_DEPLOY_CLIENT_ID: ${{ secrets.PAC_DEPLOY_CLIENT_ID }}
-        PAC_DEPLOY_ENV_URL: ${{ secrets.PAC_DEPLOY_ENV_URL }}
-        PAC_DEPLOY_AZURE_TENANT_ID: ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}
-        PLUGIN_MANAGED_IDENTITY_APP_ID: ${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}
       name: Development
       
     testing:
@@ -41,11 +36,6 @@ jobs:
       with:
           environment: 'testing'
           stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade }}
-      secrets:
-        PAC_DEPLOY_CLIENT_ID: ${{ secrets.PAC_DEPLOY_CLIENT_ID }}
-        PAC_DEPLOY_ENV_URL: ${{ secrets.PAC_DEPLOY_ENV_URL }}
-        PAC_DEPLOY_AZURE_TENANT_ID: ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}
-        PLUGIN_MANAGED_IDENTITY_APP_ID: ${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}
       needs: development
       name: Testing
       
@@ -55,11 +45,6 @@ jobs:
       with:
           environment: 'production'
           stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade =='true' }}
-      secrets:    
-        PAC_DEPLOY_CLIENT_ID: ${{ secrets.PAC_DEPLOY_CLIENT_ID }}
-        PAC_DEPLOY_ENV_URL: ${{ secrets.PAC_DEPLOY_ENV_URL }}
-        PAC_DEPLOY_AZURE_TENANT_ID: ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}
-        PLUGIN_MANAGED_IDENTITY_APP_ID: ${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}
       needs: [testing, development]
       name: Production
 

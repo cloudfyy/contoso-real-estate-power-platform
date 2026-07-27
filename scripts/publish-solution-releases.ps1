@@ -17,6 +17,7 @@ param (
 
 $ErrorActionPreference = 'Stop'
 
+. "$PSScriptRoot\common\environment-variables.ps1"
 . "$PSScriptRoot\common\solution-packages.ps1"
 
 function Assert-CommandSucceeded {

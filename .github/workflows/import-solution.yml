@@ -13,6 +13,10 @@ on:
       solutionName:
         required: true
         type: string
+      targetName:
+        required: false
+        type: string
+        default: ''
       overrideVersionTag:
         required: false
         type: string # rather than using the latest release - use a specific release as defined by it's tag
@@ -20,21 +24,14 @@ on:
         required: false
         type: string # workflow calls use strings instead of booleans
         default: 'true'
-    secrets:
-      PAC_DEPLOY_CLIENT_ID:
-        required: true
-      PAC_DEPLOY_ENV_URL:
-        required: true
-      PAC_DEPLOY_AZURE_TENANT_ID:
-        required: true
-      PLUGIN_MANAGED_IDENTITY_APP_ID:
-        required: true
 
 jobs:
   deploy:
     runs-on: windows-latest # Need windows for the data import command - everything else can run on ubuntu
     environment: ${{ inputs.environment }}
-    name: ${{ inputs.solutionName}} 
+    name: ${{ inputs.targetName }} / ${{ inputs.solutionName }}
+    env:
+      PAC_DEPLOY_ENV_URL: ${{ inputs.targetName == 'portal' && secrets.PAC_DEPLOY_PORTAL_ENV_URL || secrets.PAC_DEPLOY_CORE_ENV_URL }}
     steps: 
     - name: Checkout
       uses: actions/checkout@v4
@@ -115,7 +112,7 @@ jobs:
         
     - name: Auth pac
       run: |
-        pac auth create --githubFederated --tenant ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }} --applicationId ${{ secrets.PAC_DEPLOY_CLIENT_ID }} --environment ${{ secrets.PAC_DEPLOY_ENV_URL }}
+        pac auth create --githubFederated --tenant ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }} --applicationId ${{ secrets.PAC_DEPLOY_CLIENT_ID }} --environment $env:PAC_DEPLOY_ENV_URL
       shell: pwsh
 
     - name: Set Environment Settings
@@ -141,7 +138,7 @@ jobs:
         $solutionName = '${{ inputs.solutionName }}'
         $deploymentSettings = $configObj.$solutionName.deploymentSettings
         if ($deploymentSettings -ne $null -and $deploymentSettings -ne '') {
-          $deploymentSettingsJson = $deploymentSettings | ConvertTo-Json
+          $deploymentSettingsJson = $deploymentSettings | ConvertTo-Json -Depth 100
           $deploymentSettingsFileName = "./$solutionName/deployment_settings.json"
           Write-Host "Deployment settings file: $deploymentSettingsFileName"
           Write-Host $deploymentSettingsJson
