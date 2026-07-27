@@ -88,6 +88,7 @@ jobs:
           }
 
     - name: Inject Deployment Settings (Work around for some configuration not updatable in deployment Settings)
+      if: inputs.solutionName == 'ContosoRealEstateCore' || inputs.solutionName == 'ContosoRealEstatePortal'
       run: |
         $solutionFilePath = '${{ inputs.solutionName }}/${{ inputs.solutionName }}_managed.zip'
         $pluginManagedIdentityAppId = '${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}'
@@ -96,13 +97,16 @@ jobs:
 
         # The following works around MANAGED_IDENTITY_IMPORT_BUG
         # If vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID is set, pass in a parameter to the script called -overridePluginManagedIdentityId
-        $overrideManagedIdentityParameter = ''
-        if ('${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}' -ne '') {
-          $overrideManagedIdentityParameter = ' -overridePluginManagedIdentityId "${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}"'
+        $scriptArguments = @{
+          solutionFilePath = $solutionFilePath
+          pluginManagedIdentityAppId = $pluginManagedIdentityAppId
+          tenantId = $tenantId
         }
-        $expression = "$scriptPath -solutionFilePath ""$solutionFilePath"" -pluginManagedIdentityAppId ""$pluginManagedIdentityAppId"" -tenantId ""$tenantId"" $overrideManagedIdentityParameter"
-        Write-Host "Running script: $expression"
-        Invoke-Expression $expression 
+        if ('${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}' -ne '') {
+          $scriptArguments.overridePluginManagedIdentityId = '${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}'
+        }
+        Write-Host "Running script: $scriptPath"
+        & $scriptPath @scriptArguments
       shell: pwsh
       working-directory: ${{ github.workspace }}
 
