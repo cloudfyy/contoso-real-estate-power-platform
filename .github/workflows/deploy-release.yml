@@ -1,12 +1,12 @@
 # This workflow is triggered manually
 # It will deploy the latest solutions to the development, testing, and production environments
 name: Deploy
-    
+
 permissions:
   id-token: write
   packages: write
   contents: write
-  
+
 on:
   workflow_dispatch:
     inputs:
@@ -19,34 +19,118 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Note:   The environment secrets are defined here, but acutally provided by the environment that the
-#         child workflow runs under. They don't exist as repo secrets
-# See: https://github.com/actions/runner/issues/1490
 jobs:
-    development:
-      uses: ./.github/workflows/deploy-environment.yml
-      with:
-          environment: 'development'
-          stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade }}
-      name: Development
-      
-    testing:
-      if: false
-      uses: ./.github/workflows/deploy-environment.yml
-      with:
-          environment: 'testing'
-          stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade }}
-      needs: development
-      name: Testing
-      
-    production:
-      if: false
-      uses: ./.github/workflows/deploy-environment.yml
-      with:
-          environment: 'production'
-          stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade =='true' }}
-      needs: [testing, development]
-      name: Production
+  development:
+    runs-on: windows-latest
+    environment: development
+    name: Development / Deploy (${{ matrix.targetName }}, ${{ matrix.solutionName }})
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - targetName: core
+            solutionName: ContosoRealEstateCustomControls
+          - targetName: core
+            solutionName: ContosoRealEstateCore
+          - targetName: portal
+            solutionName: ContosoRealEstateCustomControls
+          - targetName: portal
+            solutionName: ContosoRealEstateCore
+          - targetName: portal
+            solutionName: ContosoRealEstatePortal
+    env:
+      PAC_DEPLOY_ENV_URL: ${{ matrix.targetName == 'portal' && secrets.PAC_DEPLOY_PORTAL_ENV_URL || secrets.PAC_DEPLOY_CORE_ENV_URL }}
+      PAC_DEPLOY_CLIENT_ID: ${{ secrets.PAC_DEPLOY_CLIENT_ID }}
+      PAC_DEPLOY_AZURE_TENANT_ID: ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}
+      PLUGIN_MANAGED_IDENTITY_APP_ID: ${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}
+      PAYMENTS_API_CLIENT_SECRET: ${{ secrets.PAYMENTS_API_CLIENT_SECRET }}
+      PAC_DEPLOY_CONFIG: ${{ vars.PAC_DEPLOY_CONFIG }}
+      OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: ${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    
+      - name: Import solution
+        uses: ./.github/actions/import-solution
+        with:
+          solutionName: ${{ matrix.solutionName }}
+          targetName: ${{ matrix.targetName }}
+          stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade }}
 
+  testing:
+    if: false
+    runs-on: windows-latest
+    environment: testing
+    needs: development
+    name: Testing / Deploy (${{ matrix.targetName }}, ${{ matrix.solutionName }})
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - targetName: core
+            solutionName: ContosoRealEstateCustomControls
+          - targetName: core
+            solutionName: ContosoRealEstateCore
+          - targetName: portal
+            solutionName: ContosoRealEstateCustomControls
+          - targetName: portal
+            solutionName: ContosoRealEstateCore
+          - targetName: portal
+            solutionName: ContosoRealEstatePortal
+    env:
+      PAC_DEPLOY_ENV_URL: ${{ matrix.targetName == 'portal' && secrets.PAC_DEPLOY_PORTAL_ENV_URL || secrets.PAC_DEPLOY_CORE_ENV_URL }}
+      PAC_DEPLOY_CLIENT_ID: ${{ secrets.PAC_DEPLOY_CLIENT_ID }}
+      PAC_DEPLOY_AZURE_TENANT_ID: ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}
+      PLUGIN_MANAGED_IDENTITY_APP_ID: ${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}
+      PAYMENTS_API_CLIENT_SECRET: ${{ secrets.PAYMENTS_API_CLIENT_SECRET }}
+      PAC_DEPLOY_CONFIG: ${{ vars.PAC_DEPLOY_CONFIG }}
+      OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: ${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Import solution
+        uses: ./.github/actions/import-solution
+        with:
+          solutionName: ${{ matrix.solutionName }}
+          targetName: ${{ matrix.targetName }}
+          stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade }}
+
+  production:
+    if: false
+    runs-on: windows-latest
+    environment: production
+    needs: [testing, development]
+    name: Production / Deploy (${{ matrix.targetName }}, ${{ matrix.solutionName }})
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - targetName: core
+            solutionName: ContosoRealEstateCustomControls
+          - targetName: core
+            solutionName: ContosoRealEstateCore
+          - targetName: portal
+            solutionName: ContosoRealEstateCustomControls
+          - targetName: portal
+            solutionName: ContosoRealEstateCore
+          - targetName: portal
+            solutionName: ContosoRealEstatePortal
+    env:
+      PAC_DEPLOY_ENV_URL: ${{ matrix.targetName == 'portal' && secrets.PAC_DEPLOY_PORTAL_ENV_URL || secrets.PAC_DEPLOY_CORE_ENV_URL }}
+      PAC_DEPLOY_CLIENT_ID: ${{ secrets.PAC_DEPLOY_CLIENT_ID }}
+      PAC_DEPLOY_AZURE_TENANT_ID: ${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}
+      PLUGIN_MANAGED_IDENTITY_APP_ID: ${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}
+      PAYMENTS_API_CLIENT_SECRET: ${{ secrets.PAYMENTS_API_CLIENT_SECRET }}
+      PAC_DEPLOY_CONFIG: ${{ vars.PAC_DEPLOY_CONFIG }}
+      OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: ${{ vars.OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Import solution
+        uses: ./.github/actions/import-solution
+        with:
+          solutionName: ${{ matrix.solutionName }}
+          targetName: ${{ matrix.targetName }}
+          stageAndUpgrade: ${{ github.event.inputs.stageAndUpgrade == 'true' }}
