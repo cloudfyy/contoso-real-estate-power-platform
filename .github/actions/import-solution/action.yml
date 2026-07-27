@@ -113,9 +113,16 @@ runs:
       run: |
         function Get-ConnectionId {
           param (
+            [string]$LogicalName,
             [string]$ApiIdPrefix,
             [string]$DisplayName
           )
+
+          $configuredConnection = $portalSettings.ConnectionReferences | Where-Object { $_.LogicalName -eq $LogicalName } | Select-Object -First 1
+          if ($null -ne $configuredConnection -and -not [string]::IsNullOrWhiteSpace([string]$configuredConnection.ConnectionId)) {
+            Write-Host "Using configured connection id for $DisplayName." -ForegroundColor Green
+            return [string]$configuredConnection.ConnectionId
+          }
 
           $connectionOutput = pac connection list --environment $env:PAC_DEPLOY_ENV_URL
           if ($LASTEXITCODE -ne 0) {
@@ -154,9 +161,11 @@ runs:
 
         $connectionIds = @{
           contoso_PortalBotQueries = Get-ConnectionId `
+            -LogicalName 'contoso_PortalBotQueries' `
             -ApiIdPrefix '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps' `
             -DisplayName 'Dataverse'
           contoso_StripeAPI = Get-ConnectionId `
+            -LogicalName 'contoso_StripeAPI' `
             -ApiIdPrefix '/providers/Microsoft.PowerApps/apis/shared_contoso-5fcontoso-20stripe-20api' `
             -DisplayName 'Contoso Stripe API'
         }

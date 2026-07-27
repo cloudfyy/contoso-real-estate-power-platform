@@ -104,7 +104,8 @@ function Get-DeploymentEnvironmentVariable {
 function Get-DeploymentConfigurationJson {
     param (
         [psobject]$EnvironmentVariables,
-        [string]$PortalUrl
+        [string]$PortalUrl,
+        [string]$PortalPacDeployEnvUrl
     )
 
     $solutionPrefix = 'contoso'
@@ -123,6 +124,14 @@ function Get-DeploymentConfigurationJson {
     }
 
     $environmentSettings = Get-Content -Path $environmentSettingsPath -Raw | ConvertFrom-Json
+    $portalDataverseConnectionId = Get-PowerPlatformConnectionId `
+        -EnvironmentUrl $PortalPacDeployEnvUrl `
+        -ApiIdPrefix '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps' `
+        -DisplayName 'Dataverse'
+    $portalStripeConnectionId = Get-PowerPlatformConnectionId `
+        -EnvironmentUrl $PortalPacDeployEnvUrl `
+        -ApiIdPrefix '/providers/Microsoft.PowerApps/apis/shared_contoso-5fcontoso-20stripe-20api' `
+        -DisplayName 'Contoso Stripe API'
 
     $deploymentConfiguration = [ordered]@{
         ContosoRealEstateCore = [ordered]@{
@@ -151,12 +160,12 @@ function Get-DeploymentConfigurationJson {
                 ConnectionReferences = @(
                     [ordered]@{
                         LogicalName = 'contoso_PortalBotQueries'
-                        ConnectionId = ''
+                        ConnectionId = $portalDataverseConnectionId
                         ConnectorId = '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps'
                     },
                     [ordered]@{
                         LogicalName = 'contoso_StripeAPI'
-                        ConnectionId = ''
+                        ConnectionId = $portalStripeConnectionId
                         ConnectorId = '/providers/Microsoft.PowerApps/apis/shared_contoso-5fcontoso-20stripe-20api-5f6a4f91c8025d1333'
                     }
                 )
@@ -167,7 +176,7 @@ function Get-DeploymentConfigurationJson {
     return $deploymentConfiguration | ConvertTo-Json -Depth 100 -Compress
 }
 
-$deploymentConfigJson = Get-DeploymentConfigurationJson -EnvironmentVariables $envVars -PortalUrl $PortalUrl
+$deploymentConfigJson = Get-DeploymentConfigurationJson -EnvironmentVariables $envVars -PortalUrl $PortalUrl -PortalPacDeployEnvUrl $PortalPacDeployEnvUrl
 $existingApplicationId = $null
 
 if ([string]::IsNullOrWhiteSpace($PacDeployClientId)) {

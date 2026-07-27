@@ -331,6 +331,42 @@ function Select-PowerPagesPortalUrl {
     }
 }
 
+function Get-PowerPlatformConnectionId {
+    param (
+        [string]$EnvironmentUrl,
+        [string]$ApiIdPrefix,
+        [string]$DisplayName
+    )
+
+    AssertCommandExists -Name 'pac'
+
+    if ([string]::IsNullOrWhiteSpace($EnvironmentUrl)) {
+        throw 'A Dataverse environment URL is required to list Power Platform connections.'
+    }
+
+    $connectionOutput = pac connection list --environment $EnvironmentUrl 2>&1
+    AssertCommandSucceeded -CommandDescription "List Power Platform connections for '$EnvironmentUrl'" -CommandOutput $connectionOutput
+
+    foreach ($line in $connectionOutput) {
+        $trimmedLine = ([string]$line).Trim()
+        if ($trimmedLine -notmatch '^[a-fA-F0-9]{32}\s+') {
+            continue
+        }
+
+        $columns = @($trimmedLine -split '\s{2,}')
+        if ($columns.Count -lt 4) {
+            continue
+        }
+
+        if ($columns[2].StartsWith($ApiIdPrefix) -and $columns[3] -eq 'Connected') {
+            Write-Host "Using connection '$($columns[1])' for $DisplayName." -ForegroundColor Green
+            return $columns[0]
+        }
+    }
+
+    throw "No connected '$DisplayName' connection was found in '$EnvironmentUrl'. Create the connection once in the target environment, then rerun this script."
+}
+
 function Add-PowerPlatformApplicationUser {
     param (
         [string]$EnvironmentUrl,
