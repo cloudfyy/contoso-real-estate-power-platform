@@ -1,0 +1,76 @@
+name: $(Date:yyyyMMdd).$(Rev:r)
+
+trigger:
+  branches:
+    include:
+      - main
+      - release/*
+      - releases/*
+
+pr:
+  branches:
+    include:
+      - '*'
+    exclude:
+      - release/*
+      - releases/*
+
+variables:
+  buildConfiguration: Release
+
+pool:
+  vmImage: windows-latest
+
+steps:
+  - checkout: self
+    fetchDepth: '0'
+
+  - task: UseDotNet@2
+    displayName: Setup .NET
+    inputs:
+      packageType: sdk
+      version: 10.0.x
+
+  - pwsh: dotnet restore src/azure-api/Contoso.API.Payments.sln
+    displayName: Restore Payments API
+
+  - pwsh: dotnet build src/azure-api/Contoso.API.Payments.sln --configuration $(buildConfiguration) --no-restore
+    displayName: Build Payments API
+
+  - pwsh: |
+      $infraArtifactRoot = "$(Build.ArtifactStagingDirectory)/infra"
+      New-Item -ItemType Directory -Path $infraArtifactRoot -Force > $null
+      az bicep build --file infra/main.bicep --outfile "$infraArtifactRoot/main.json"
+    displayName: Build Bicep template
+
+  - pwsh: ./scripts/build-release-packages.ps1 -Solution All -Clean
+    displayName: Build Power Platform solution packages
+
+  - pwsh: |
+      $artifactRoot = "$(Build.ArtifactStagingDirectory)/solution-packages"
+      New-Item -ItemType Directory -Path $artifactRoot -Force > $null
+
+      $packagePatterns = @(
+        'src/controls/solution/ContosoRealEstateCustomControls/bin/*.zip',
+        'src/core/solution/ContosoRealEstateCore/bin/*.zip',
+        'src/portal/solution/ContosoRealEstatePortal/bin/*.zip'
+      )
+
+      foreach ($pattern in $packagePatterns) {
+        Get-ChildItem -Path $pattern -ErrorAction Stop | Copy-Item -Destination $artifactRoot -Force
+      }
+
+      Get-ChildItem -Path $artifactRoot | Format-Table Name, Length -AutoSize
+    displayName: Stage solution package artifacts
+
+  - task: PublishPipelineArtifact@1
+    displayName: Publish solution package artifacts
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/solution-packages
+      artifact: solution-packages
+
+  - task: PublishPipelineArtifact@1
+    displayName: Publish infrastructure artifact
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/infra
+      artifact: infra
