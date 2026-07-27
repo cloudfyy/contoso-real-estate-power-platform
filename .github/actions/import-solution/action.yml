@@ -131,18 +131,13 @@ runs:
 
           foreach ($line in $connectionOutput) {
             $trimmedLine = ([string]$line).Trim()
-            if ($trimmedLine -notmatch '^[a-fA-F0-9]{32}\s+') {
+            if ($trimmedLine -notmatch '^(?<Id>[a-fA-F0-9]{32})\s+(?<Name>.*?)\s+(?<ApiId>/providers/Microsoft\.PowerApps/apis/\S+)\s+(?<Status>\S+)\s*$') {
               continue
             }
 
-            $columns = @($trimmedLine -split '\s{2,}')
-            if ($columns.Count -lt 4) {
-              continue
-            }
-
-            if ($columns[2].StartsWith($ApiIdPrefix) -and $columns[3] -eq 'Connected') {
-              Write-Host "Using connection '$($columns[1])' for $DisplayName." -ForegroundColor Green
-              return $columns[0]
+            if ($matches.ApiId.StartsWith($ApiIdPrefix) -and $matches.Status -eq 'Connected') {
+              Write-Host "Using connection '$($matches.Name)' for $DisplayName." -ForegroundColor Green
+              return $matches.Id
             }
           }
 
