@@ -68,11 +68,17 @@ if ([string]::IsNullOrWhiteSpace($CorePacDeployEnvUrl)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($PortalPacDeployEnvUrl)) {
-    $PortalPacDeployEnvUrl = Select-PowerPlatformEnvironmentUrl -Purpose "Portal Dev Dataverse environment for importing ContosoRealEstateCustomControls, ContosoRealEstateCore, and ContosoRealEstatePortal in '$GitHubEnvironmentName'"
+    $PortalPacDeployEnvUrl = Select-PowerPlatformEnvironmentUrl `
+        -Purpose "Portal Dev Dataverse environment for importing ContosoRealEstateCustomControls, ContosoRealEstateCore, and ContosoRealEstatePortal in '$GitHubEnvironmentName'" `
+        -ExcludedEnvironmentUrls @($CorePacDeployEnvUrl)
 }
 
 if ([string]::IsNullOrWhiteSpace($PortalPacDeployEnvUrl)) {
     throw "PAC_DEPLOY_PORTAL_ENV_URL is required. Pass -PortalPacDeployEnvUrl with the Portal Dev Dataverse environment URL."
+}
+
+if ($CorePacDeployEnvUrl.TrimEnd('/') -eq $PortalPacDeployEnvUrl.TrimEnd('/')) {
+    throw 'PAC_DEPLOY_CORE_ENV_URL and PAC_DEPLOY_PORTAL_ENV_URL must be different Dataverse environments.'
 }
 
 if ([string]::IsNullOrWhiteSpace($PortalUrl)) {

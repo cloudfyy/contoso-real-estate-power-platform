@@ -2,4 +2,4 @@
 # Licensed under the MIT License.
 
 $scriptPath = Join-Path $PSScriptRoot '..\infra\scripts\generate-payments-api-client-secret.ps1'
-& $scriptPath
+& $scriptPath -azureEnv $env:AZURE_ENV_NAME -SkipKeyVaultWrite

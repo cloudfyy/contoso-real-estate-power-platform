@@ -218,34 +218,48 @@ function Get-PowerPlatformEnvironmentUrl {
 
 function Select-PowerPlatformEnvironmentUrl {
     param (
-        [string]$Purpose = 'Power Platform environment'
+        [string]$Purpose = 'Power Platform environment',
+        [string[]]$ExcludedEnvironmentUrls = @()
     )
 
     AssertCommandExists -Name 'pac'
 
-    $environmentListJson = pac env list --json 2>&1
-    AssertCommandSucceeded -CommandDescription 'List Power Platform environments' -CommandOutput $environmentListJson
+    if ($null -eq $script:PowerPlatformEnvironmentsCache) {
+        Write-Host 'Loading Power Platform environments...' -ForegroundColor Yellow
+        $environmentListJson = pac env list --json 2>&1
+        AssertCommandSucceeded -CommandDescription 'List Power Platform environments' -CommandOutput $environmentListJson
+        $script:PowerPlatformEnvironmentsCache = @($environmentListJson | ConvertFrom-Json)
+    }
 
-    $environments = @($environmentListJson | ConvertFrom-Json)
+    $environments = @($script:PowerPlatformEnvironmentsCache)
     if ($environments.Count -eq 0) {
         throw 'No Power Platform environments were returned for the current PAC user.'
     }
+
+    $excludedUrls = @($ExcludedEnvironmentUrls | ForEach-Object { ([string]$_).TrimEnd('/') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
     Write-Host "Select the ${Purpose}:" -ForegroundColor Yellow
     for ($index = 0; $index -lt $environments.Count; $index++) {
         $environment = $environments[$index]
         $number = $index + 1
         $friendlyName = [string]$environment.FriendlyName
-        $environmentUrl = [string]$environment.EnvironmentUrl
+        $environmentUrl = ([string]$environment.EnvironmentUrl).TrimEnd('/')
         $environmentId = [string]$environment.EnvironmentIdentifier.Id
-        Write-Host "[$number] $friendlyName - $environmentUrl ($environmentId)" -ForegroundColor Yellow
+        $selectedMarker = if ($excludedUrls -contains $environmentUrl) { ' [already selected]' } else { '' }
+        Write-Host "[$number] $friendlyName - $environmentUrl ($environmentId)$selectedMarker" -ForegroundColor Yellow
     }
 
     while ($true) {
         $selection = Read-Host "Enter a number for the $Purpose"
         $selectionNumber = 0
         if ([int]::TryParse($selection, [ref]$selectionNumber) -and $selectionNumber -ge 1 -and $selectionNumber -le $environments.Count) {
-            return ([string]$environments[$selectionNumber - 1].EnvironmentUrl).TrimEnd('/')
+            $selectedEnvironmentUrl = ([string]$environments[$selectionNumber - 1].EnvironmentUrl).TrimEnd('/')
+            if ($excludedUrls -contains $selectedEnvironmentUrl) {
+                Write-Host "Environment '$selectedEnvironmentUrl' was already selected. Choose a different environment." -ForegroundColor Yellow
+                continue
+            }
+
+            return $selectedEnvironmentUrl
         }
 
         Write-Host "Invalid selection '$selection'. Enter a number from 1 to $($environments.Count)." -ForegroundColor Yellow

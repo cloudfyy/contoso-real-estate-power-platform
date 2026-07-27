@@ -1,9 +1,21 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+param (
+	[string]$azureEnv,
+	[switch]$SkipKeyVaultWrite
+)
 
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\common\payments-api-function-helpers.ps1"
+
+if (-not [string]::IsNullOrWhiteSpace($azureEnv) -or [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('AZURE_RESOURCE_GROUP'))) {
+	. "$PSScriptRoot\function-get-environment-variables.ps1"
+	$envVars = GetEnvironmentVariables -azureEnv $azureEnv
+	$envVars.PSObject.Properties | ForEach-Object {
+		[Environment]::SetEnvironmentVariable($_.Name, [string]$_.Value, 'Process')
+	}
+}
 
 function Get-RequiredEnvironmentVariable {
 	param (
@@ -95,6 +107,24 @@ if ($easyAuthSecretGenerated -or $paymentsApiClientSecretGenerated) {
 		--resource-group $resourceGroupName `
 		--name $functionAppName `
 		--output none
+}
+
+if ($SkipKeyVaultWrite) {
+	Write-Host 'Skipping Payments API client secret Key Vault write because -SkipKeyVaultWrite was provided.' -ForegroundColor Yellow
+}
+else {
+	$selectedAzureEnv = Get-RequiredEnvironmentVariable 'AZURE_ENV_NAME'
+	$writeScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'write-payments-api-client-secret-to-key-vault.ps1'
+	$writeArguments = @{
+		azureEnv = $selectedAzureEnv
+	}
+
+	if (-not [string]::IsNullOrWhiteSpace($paymentsApiClientSecretEndDateTime)) {
+		$writeArguments.secretExpiresOn = $paymentsApiClientSecretEndDateTime
+	}
+
+	Write-Host 'Writing Payments API client secret to Key Vault.' -ForegroundColor Green
+	& $writeScriptPath @writeArguments
 }
 
 Write-Host 'Entra client secrets are valid and applied.' -ForegroundColor Green
