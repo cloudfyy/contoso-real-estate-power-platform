@@ -15,8 +15,6 @@ param virtualNetworkSubnetId string = ''
 
 param apiApplicationID string
 param apiClientApplicationID string
-@secure()
-param apiAppicationSecret string
 param paymentsApiClientSecretName string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2022-05-01' existing = {
@@ -77,8 +75,6 @@ resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = {
       FUNCTIONS_EXTENSION_VERSION: '~4'
       FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
       WEBSITE_RUN_FROM_PACKAGE: '1'
-      MICROSOFT_PROVIDER_AUTHENTICATION_SECRET: apiAppicationSecret
-      PAYMENTS_API_CLIENT_SECRET: apiAppicationSecret
       minimumElasticInstanceCount: 0
       httpsOnly: true
       WEBSITE_AUTH_AAD_ALLOWED_TENANTS: tenant().tenantId // This sets the 'Allow requests from specific tenants' setting on the authconfig added below

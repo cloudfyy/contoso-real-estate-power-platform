@@ -171,7 +171,7 @@ try {
         --output tsv
 
     if ([string]::IsNullOrWhiteSpace($apiClientSecret)) {
-        throw "Could not read PAYMENTS_API_CLIENT_SECRET from Function App '$functionAppName'. Run azd provision, or run infra/scripts/repair-payments-api-easyauth-secret.ps1 if the configured client secret is invalid."
+        throw "Could not read PAYMENTS_API_CLIENT_SECRET from Function App '$functionAppName'. Run azd provision, or run infra/scripts/generate-payments-api-client-secret.ps1 if the configured client secret is missing or invalid."
     }
 
     try {
@@ -187,7 +187,7 @@ try {
             throw
         }
 
-        throw "The configured PAYMENTS_API_CLIENT_SECRET is invalid. Run infra/scripts/repair-payments-api-easyauth-secret.ps1 to repair the client secret, then rerun this script."
+        throw "The configured PAYMENTS_API_CLIENT_SECRET is invalid. Run infra/scripts/generate-payments-api-client-secret.ps1 to generate a new client secret, then rerun this script."
     }
 
     if ([string]::IsNullOrWhiteSpace($token)) {

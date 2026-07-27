@@ -35,9 +35,6 @@ module api './api-host.bicep' = {
     apiApplicationID: apiApplicationID
     apiClientApplicationID: apiClientApplicationID
     paymentsApiClientSecretName: paymentsApiClientSecretName
-    // Requires access to the vault
-    // See https://learn.microsoft.com/en-us/azure/azure-resource-manager/managed-applications/key-vault-access
-    apiAppicationSecret: 'set-by-postprovision-hook'
     managedIdentity: managedIdentity
     storageManagedIdentity: storageManagedIdentity
     virtualNetworkSubnetId: virtualNetworkSubnetId

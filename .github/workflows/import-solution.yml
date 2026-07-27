@@ -32,6 +32,7 @@ jobs:
     name: ${{ inputs.targetName }} / ${{ inputs.solutionName }}
     env:
       PAC_DEPLOY_ENV_URL: ${{ inputs.targetName == 'portal' && secrets.PAC_DEPLOY_PORTAL_ENV_URL || secrets.PAC_DEPLOY_CORE_ENV_URL }}
+      PAYMENTS_API_CLIENT_SECRET: ${{ secrets.PAYMENTS_API_CLIENT_SECRET }}
     steps: 
     - name: Checkout
       uses: actions/checkout@v4
@@ -131,19 +132,95 @@ jobs:
           Write-Host "No environment settings found" -ForegroundColor Yellow
         }
 
+    - name: Resolve Portal Connection References
+      if: inputs.solutionName == 'ContosoRealEstatePortal'
+      run: |
+        function Get-ConnectionId {
+          param (
+            [string]$ApiIdPrefix,
+            [string]$DisplayName
+          )
+
+          $connectionOutput = pac connection list --environment $env:PAC_DEPLOY_ENV_URL
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to list Power Platform connections for '$env:PAC_DEPLOY_ENV_URL'."
+          }
+
+          foreach ($line in $connectionOutput) {
+            $trimmedLine = ([string]$line).Trim()
+            if ($trimmedLine -notmatch '^[a-fA-F0-9]{32}\s+') {
+              continue
+            }
+
+            $columns = @($trimmedLine -split '\s{2,}')
+            if ($columns.Count -lt 4) {
+              continue
+            }
+
+            if ($columns[2].StartsWith($ApiIdPrefix) -and $columns[3] -eq 'Connected') {
+              Write-Host "Using connection '$($columns[1])' for $DisplayName." -ForegroundColor Green
+              return $columns[0]
+            }
+          }
+
+          throw "No connected '$DisplayName' connection was found in '$env:PAC_DEPLOY_ENV_URL'. Create the connection once in the Portal Dev environment, then rerun this deployment."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($env:PAYMENTS_API_CLIENT_SECRET)) {
+          throw "PAYMENTS_API_CLIENT_SECRET is not configured on the GitHub deployment environment. Rerun scripts/configure-github-deployment-environment.ps1 to write it."
+        }
+
+        $configJson = '${{ vars.PAC_DEPLOY_CONFIG }}'
+        $configObj = ConvertFrom-Json $configJson
+        $portalSettings = $configObj.ContosoRealEstatePortal.deploymentSettings
+        if ($portalSettings -eq $null) {
+          throw 'PAC_DEPLOY_CONFIG does not contain ContosoRealEstatePortal deployment settings.'
+        }
+
+        $connectionIds = @{
+          contoso_PortalBotQueries = Get-ConnectionId `
+            -ApiIdPrefix '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps' `
+            -DisplayName 'Dataverse'
+          contoso_StripeAPI = Get-ConnectionId `
+            -ApiIdPrefix '/providers/Microsoft.PowerApps/apis/shared_contoso-5fcontoso-20stripe-20api' `
+            -DisplayName 'Contoso Stripe API'
+        }
+
+        pac connection update `
+          --environment $env:PAC_DEPLOY_ENV_URL `
+          --tenant-id '${{ secrets.PAC_DEPLOY_AZURE_TENANT_ID }}' `
+          --connection-id $connectionIds.contoso_StripeAPI `
+          --application-id '${{ secrets.PLUGIN_MANAGED_IDENTITY_APP_ID }}' `
+          --client-secret $env:PAYMENTS_API_CLIENT_SECRET
+        if ($LASTEXITCODE -ne 0) {
+          throw 'Failed to update the Contoso Stripe API connection with the Payments API client secret.'
+        }
+
+        foreach ($connectionReference in $portalSettings.ConnectionReferences) {
+          if ($connectionIds.ContainsKey($connectionReference.LogicalName)) {
+            $connectionReference.ConnectionId = $connectionIds[$connectionReference.LogicalName]
+          }
+        }
+
+        $portalSettings | ConvertTo-Json -Depth 100 | Out-File -FilePath './ContosoRealEstatePortal/deployment_settings.json' -Encoding UTF8
+      shell: pwsh
+      working-directory: "."
+
     - name: Import Solution
       run: |
         $configJson = '${{ vars.PAC_DEPLOY_CONFIG }}'
         $configObj = ConvertFrom-Json $configJson
         $solutionName = '${{ inputs.solutionName }}'
         $deploymentSettings = $configObj.$solutionName.deploymentSettings
+        $deploymentSettingsFileName = "./$solutionName/deployment_settings.json"
         if ($deploymentSettings -ne $null -and $deploymentSettings -ne '') {
-          $deploymentSettingsJson = $deploymentSettings | ConvertTo-Json -Depth 100
-          $deploymentSettingsFileName = "./$solutionName/deployment_settings.json"
-          Write-Host "Deployment settings file: $deploymentSettingsFileName"
-          Write-Host $deploymentSettingsJson
-          
-          $deploymentSettingsJson | Out-File -FilePath $deploymentSettingsFileName -Encoding UTF8
+          if (-not (Test-Path -Path $deploymentSettingsFileName)) {
+            $deploymentSettingsJson = $deploymentSettings | ConvertTo-Json -Depth 100
+            Write-Host "Deployment settings file: $deploymentSettingsFileName"
+            Write-Host $deploymentSettingsJson
+
+            $deploymentSettingsJson | Out-File -FilePath $deploymentSettingsFileName -Encoding UTF8
+          }
           $settingsFileArg = "--settings-file $deploymentSettingsFileName"
         } else {
           Write-Host "No deployment settings found"

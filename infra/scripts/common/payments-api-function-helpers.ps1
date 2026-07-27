@@ -14,6 +14,20 @@ function Get-RequiredValue {
     return [string]$Value
 }
 
+function Get-FunctionAppSetting {
+    param (
+        [string]$ResourceGroupName,
+        [string]$FunctionAppName,
+        [string]$Name
+    )
+
+    return az functionapp config appsettings list `
+        --resource-group $ResourceGroupName `
+        --name $FunctionAppName `
+        --query "[?name=='$Name'].value | [0]" `
+        --output tsv
+}
+
 function Get-PaymentsApiAccessToken {
     param (
         [string]$TenantId,
@@ -51,6 +65,135 @@ function Get-PaymentsApiAccessToken {
             Start-Sleep -Seconds 5
         }
     }
+}
+
+function Test-PaymentsApiClientSecret {
+    param (
+        [string]$TenantId,
+        [string]$ClientAppId,
+        [string]$ApiAppId,
+        [string]$ClientSecret
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ClientSecret)) {
+        return $false
+    }
+
+    try {
+        $token = Get-PaymentsApiAccessToken `
+            -TenantId $TenantId `
+            -ApiAppId $ApiAppId `
+            -ApiClientAppId $ClientAppId `
+            -ApiClientSecret $ClientSecret
+
+        return -not [string]::IsNullOrWhiteSpace($token)
+    }
+    catch {
+        Write-Host "Existing Payments API client secret is not usable. $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Test-EasyAuthClientSecret {
+    param (
+        [string]$TenantId,
+        [string]$ApiAppId,
+        [string]$ClientSecret
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ClientSecret)) {
+        return $false
+    }
+
+    $body = @{
+        client_id = $ApiAppId
+        client_secret = $ClientSecret
+        grant_type = 'client_credentials'
+        scope = "api://$ApiAppId/.default"
+    }
+
+    try {
+        $tokenResponse = Invoke-RestMethod `
+            -Method Post `
+            -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" `
+            -ContentType 'application/x-www-form-urlencoded' `
+            -Body $body
+
+        return -not [string]::IsNullOrWhiteSpace($tokenResponse.access_token)
+    }
+    catch {
+        Write-Host "Existing EasyAuth client secret is not usable. $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function New-EntraClientSecret {
+    param (
+        [string]$ApplicationObjectId,
+        [string]$DisplayName,
+        [string]$TenantId
+    )
+
+    $endDateTime = (Get-Date).ToUniversalTime().AddDays(60).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $body = @{
+        passwordCredential = @{
+            displayName = $DisplayName
+            endDateTime = $endDateTime
+        }
+    } | ConvertTo-Json -Depth 4 -Compress
+
+    Write-Host "Generating Entra client secret '$DisplayName' for application object '$ApplicationObjectId'"
+    $bodyFile = New-TemporaryFile
+    Set-Content -Path $bodyFile -Value $body -Encoding utf8
+
+    try {
+        $credentialResult = az rest `
+            --method post `
+            --url "https://graph.microsoft.com/v1.0/applications/$ApplicationObjectId/addPassword" `
+            --body "@$bodyFile" `
+            --headers 'Content-Type=application/json' `
+            --output json 2>&1
+
+        if ($LASTEXITCODE -ne 0) {
+            $errorMessage = ($credentialResult | Out-String).Trim()
+            if ($errorMessage -match 'InteractionRequired|TokenCreatedWithOutdatedPolicies|InvalidAuthenticationToken') {
+                throw "Microsoft Graph requires a fresh Azure CLI login before a new client secret can be generated. No Function App settings were updated. Run 'az logout', then 'az login --tenant $TenantId', then rerun 'azd provision --environment <environment-name>'. Original error: $errorMessage"
+            }
+
+            throw "Microsoft Graph addPassword request failed. $errorMessage"
+        }
+
+        $credential = $credentialResult | ConvertFrom-Json
+    }
+    finally {
+        Remove-Item -Path $bodyFile -Force
+    }
+
+    if ([string]::IsNullOrWhiteSpace($credential.secretText)) {
+        throw "Microsoft Graph did not return a generated client secret for '$DisplayName'."
+    }
+
+    return [PSCustomObject]@{
+        KeyId = $credential.keyId
+        SecretText = $credential.secretText
+        EndDateTime = $endDateTime
+    }
+}
+
+function Remove-PreviousEntraClientSecrets {
+    param (
+        [string]$ApplicationId,
+        [string]$DisplayName,
+        [string]$CurrentKeyId
+    )
+
+    $existingCredentials = az ad app credential list --id $ApplicationId --output json | ConvertFrom-Json
+    $existingCredentials |
+        Where-Object { $_.displayName -eq $DisplayName -and $_.keyId -ne $CurrentKeyId } |
+        ForEach-Object {
+            Write-Host "Removing previous Entra client secret '$($_.keyId)' from application '$ApplicationId'"
+            az ad app credential delete --id $ApplicationId --key-id $_.keyId --output none
+        }
 }
 
 function ConvertFrom-Base64Url {

@@ -32,6 +32,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Get-RepositoryRoot
 Set-Location -Path $repoRoot
+. "$repoRoot\infra\scripts\common\payments-api-client-secret.ps1"
 
 $envVars = GetRepositoryEnvironmentVariables -azureEnv $azureEnv -scriptDirectory $repoRoot
 
@@ -203,6 +204,13 @@ if ($PSCmdlet.ShouldProcess($Repository, "configure GitHub deployment environmen
     Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $GitHubEnvironmentName -Name 'PAC_DEPLOY_CORE_ENV_URL' -Value $CorePacDeployEnvUrl
     Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $GitHubEnvironmentName -Name 'PAC_DEPLOY_PORTAL_ENV_URL' -Value $PortalPacDeployEnvUrl
     Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $GitHubEnvironmentName -Name 'PLUGIN_MANAGED_IDENTITY_APP_ID' -Value $pluginManagedIdentityAppId
+
+    $paymentsApiClientSecretInfo = Get-PaymentsApiClientSecretInfo `
+        -EnvironmentVariables $envVars `
+        -AzureEnv $envVars.AZURE_ENV_NAME `
+        -ScriptsRoot (Join-Path -Path $repoRoot -ChildPath 'infra\scripts')
+    Set-GitHubEnvironmentSecret -Repository $Repository -EnvironmentName $GitHubEnvironmentName -Name 'PAYMENTS_API_CLIENT_SECRET' -Value $paymentsApiClientSecretInfo.Value
+
     Set-GitHubEnvironmentVariable -Repository $Repository -EnvironmentName $GitHubEnvironmentName -Name 'PAC_DEPLOY_CONFIG' -Value $deploymentConfigJson
 
     Add-PowerPlatformApplicationUser -EnvironmentUrl $CorePacDeployEnvUrl -ApplicationId $applicationId -Role $PowerPlatformApplicationUserRole
@@ -216,4 +224,4 @@ if ($PSCmdlet.ShouldProcess($Repository, "configure GitHub deployment environmen
 
 Write-Host ''
 Write-Host "GitHub deployment environment '$GitHubEnvironmentName' configuration complete." -ForegroundColor Green
-Write-Host 'Deployment workflow: requires PAC secrets, PLUGIN_MANAGED_IDENTITY_APP_ID, and PAC_DEPLOY_CONFIG on each deployment environment.' -ForegroundColor Green
+Write-Host 'Deployment workflow: requires PAC secrets, PLUGIN_MANAGED_IDENTITY_APP_ID, PAYMENTS_API_CLIENT_SECRET, and PAC_DEPLOY_CONFIG on each deployment environment.' -ForegroundColor Green

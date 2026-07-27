@@ -70,7 +70,10 @@ For the deployment workflow to deploy to each Power Platform environment, the fo
 - Environment secrets added to each environment (Add environment secret)
     - `PAC_DEPLOY_AZURE_TENANT_ID` - The Azure Tenant ID of the Power Platform Tenant being deployed to
     - `PAC_DEPLOY_CLIENT_ID` - The Application ID of an Entra ID application registration that has been added to the target Power Platform environment as an application user.
-    - `PAC_DEPLOY_ENV_URL` - The url of the target environment e.g. https://org123.crm.dynamics.com
+    - `PAC_DEPLOY_CORE_ENV_URL` - The Core Dev Dataverse environment URL.
+    - `PAC_DEPLOY_PORTAL_ENV_URL` - The Portal Dev Dataverse environment URL.
+    - `PLUGIN_MANAGED_IDENTITY_APP_ID` - The Payments API client application ID injected into the Core managed solution.
+    - `PAYMENTS_API_CLIENT_SECRET` - The Payments API client secret used to update the Portal Stripe custom connector connection.
 
 - Environment variables are needed to provide deployment settings:
     - `PAC_DEPLOY_CONFIG` - The deployment settings json that contains the environment variables, connection references, and data files to import for each solution
@@ -107,7 +110,7 @@ Run the deployment environment setup script once for each deployment GitHub envi
     -azureEnv development
 ```
 
-When `-CorePacDeployEnvUrl` and `-PortalPacDeployEnvUrl` are not provided, the script lists the Power Platform environments visible to your current PAC user and prompts you to select both the Core Dev and Portal Dev Dataverse deployment targets. When `-PortalUrl` is not provided, the script lists Power Pages websites in the selected Portal Dev Dataverse environment and uses the selected website URL. This script configures the `development` GitHub deployment environment by default. It does not configure the `solution-checker` environment used by the Build workflow; that environment is configured by `scripts/configure-github-build-validate.ps1`.
+When `-CorePacDeployEnvUrl` and `-PortalPacDeployEnvUrl` are not provided, the script lists the Power Platform environments visible to your current PAC user and prompts you to select both the Core Dev and Portal Dev Dataverse deployment targets. When `-PortalUrl` is not provided, the script lists Power Pages websites in the selected Portal Dev Dataverse environment and uses the selected website URL. The script also reads the Payments API client secret through the deployed Payments API Function App and stores it as the `PAYMENTS_API_CLIENT_SECRET` GitHub environment secret. This script configures the `development` GitHub deployment environment by default. It does not configure the `solution-checker` environment used by the Build workflow; that environment is configured by `scripts/configure-github-build-validate.ps1`.
 
 The deployment workflow imports `ContosoRealEstateCustomControls` and `ContosoRealEstateCore` into the Core target, then imports `ContosoRealEstateCustomControls`, `ContosoRealEstateCore`, and `ContosoRealEstatePortal` into the Portal target. This mirrors the manual development setup where the Portal environment also needs the managed dependency solutions installed.
 
@@ -200,6 +203,7 @@ The script sets these values on the selected GitHub deployment environment:
 
 - Environment variable: `PAC_DEPLOY_CONFIG`
 - Environment secret: `PLUGIN_MANAGED_IDENTITY_APP_ID`
+- Environment secret: `PAYMENTS_API_CLIENT_SECRET`
 
 Run it once for each deployment GitHub environment:
 
