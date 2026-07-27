@@ -218,9 +218,23 @@ runs:
         $dataFiles = $configObj.$solutionName.data
         if ($dataFiles -ne $null -and $dataFiles -ne '') {
           foreach ($file in $dataFiles) {
-            $filePath = "$solutionName/$file".Trim()
+            $releaseAssetPath = "$solutionName/$file".Trim()
+            $repositoryDataPath = "src/core/data/$file".Trim()
+            $filePath = if (Test-Path -Path $releaseAssetPath) {
+              $releaseAssetPath
+            }
+            elseif (Test-Path -Path $repositoryDataPath) {
+              $repositoryDataPath
+            }
+            else {
+              throw "Data import file '$file' was not found at '$releaseAssetPath' or '$repositoryDataPath'."
+            }
+
             Write-Host "Importing data from $filePath"
             pac data import --data $filePath
+            if ($LASTEXITCODE -ne 0) {
+              throw "Data import failed for '$filePath'."
+            }
           }
         } else {
           Write-Host 'No data files found'
