@@ -189,8 +189,288 @@ After the first CI run succeeds, configure a branch policy so pull requests into
 
 This keeps CI as a required quality gate for future pull requests.
 
+## Configure CD
+
+This repository includes a first Azure DevOps CD pipeline definition at the repository root:
+
+```text
+azure-pipelines-cd.yml
+```
+
+The initial CD pipeline is manual and deploys only the `development` environment. It downloads the `solution-packages` artifact from the CI pipeline, then imports the managed Power Platform solutions in the same order as the GitHub deployment workflow.
+
+### CD Pipeline Behavior
+
+The CD pipeline performs these deployment steps:
+
+- Downloads the `solution-packages` artifact from the CI pipeline named `contoso-real-estate-ci`.
+- Installs the Power Platform CLI by using `PowerPlatformToolInstaller@2`.
+- Validates the required deployment variables.
+- Injects managed identity and tenant configuration into the Core and Portal managed solution packages.
+- Authenticates to the target Core or Portal Power Platform environment.
+- Updates environment settings from `PAC_DEPLOY_CONFIG`.
+- Resolves Portal connection references for Dataverse and Contoso Stripe API.
+- Updates the Contoso Stripe API connection with the Payments API client secret.
+- Imports each managed solution with `pac solution import`.
+- Imports configured data files by using `pac data import`.
+
+The first version deploys these solutions sequentially:
+
+```text
+core   / ContosoRealEstateCustomControls
+core   / ContosoRealEstateCore
+portal / ContosoRealEstateCustomControls
+portal / ContosoRealEstateCore
+portal / ContosoRealEstatePortal
+```
+
+### Required CD Configuration
+
+Before creating the CD pipeline, complete these Azure DevOps and Power Platform configuration steps.
+
+### Install Azure DevOps Extension
+
+Install the Microsoft Power Platform Build Tools extension in the Azure DevOps organization:
+
+```text
+https://marketplace.visualstudio.com/items?itemName=microsoft-IsvExpTools.PowerPlatform-BuildTools
+```
+
+This extension provides the `PowerPlatformToolInstaller@2` task used by `azure-pipelines-cd.yml`.
+
+### Name the CI Pipeline
+
+The CD pipeline references the CI pipeline by name:
+
+```yaml
+source: contoso-real-estate-ci
+```
+
+In Azure DevOps, rename the CI pipeline created from `/azure-pipelines.yml` to:
+
+```text
+contoso-real-estate-ci
+```
+
+Path:
+
+1. Go to **Pipelines**.
+2. Open the CI pipeline.
+3. Select the pipeline menu.
+4. Select **Rename/move**.
+5. Set the name to `contoso-real-estate-ci`.
+6. Save the change.
+
+### Create the Development Environment
+
+Create an Azure DevOps environment for development deployments:
+
+1. Go to **Pipelines** > **Environments**.
+2. Select **New environment**.
+3. Name it `development`.
+4. Select **None** for the resource type.
+5. Create the environment.
+
+Do not add approval checks to `development` for the first run. Add approvals later for `testing` and `production`.
+
+### Create the Development Variable Group
+
+Create this Azure DevOps variable group:
+
+```text
+contoso-real-estate-cd-development
+```
+
+Path:
+
+1. Go to **Pipelines** > **Library**.
+2. Select **Variable group**.
+3. Name it `contoso-real-estate-cd-development`.
+4. Add the variables listed below.
+5. Select **Pipeline permissions**.
+6. Allow the CD pipeline to use the variable group.
+
+Non-secret variables:
+
+```text
+PAC_DEPLOY_AZURE_TENANT_ID
+PAC_DEPLOY_CLIENT_ID
+PAC_DEPLOY_CORE_ENV_URL
+PAC_DEPLOY_PORTAL_ENV_URL
+PLUGIN_MANAGED_IDENTITY_APP_ID
+PAC_DEPLOY_CONFIG
+OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID
+```
+
+Secret variables:
+
+```text
+PAC_DEPLOY_CLIENT_SECRET
+PAYMENTS_API_CLIENT_SECRET
+```
+
+`OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID` is optional. Leave it empty unless the target environment needs a managed identity override.
+
+### Prepare the Entra Application
+
+The first CD version uses service principal authentication for Power Platform CLI.
+
+Prepare an Entra ID app registration and collect these values:
+
+```text
+PAC_DEPLOY_AZURE_TENANT_ID  = Tenant ID
+PAC_DEPLOY_CLIENT_ID        = Application client ID
+PAC_DEPLOY_CLIENT_SECRET    = Application client secret
+```
+
+Store `PAC_DEPLOY_CLIENT_SECRET` as a secret variable in the variable group.
+
+### Add the Application User in Power Platform
+
+Add the Entra application as an application user in each target Dataverse environment used by development deployment:
+
+- Core development environment
+- Portal development environment
+
+Grant the application user enough permissions to import managed solutions, update environment settings, update connection references, and import data.
+
+### Configure Environment URLs
+
+Add the target Dataverse environment URLs to the variable group:
+
+```text
+PAC_DEPLOY_CORE_ENV_URL
+PAC_DEPLOY_PORTAL_ENV_URL
+```
+
+The CD pipeline deploys `targetName: core` solutions to `PAC_DEPLOY_CORE_ENV_URL` and `targetName: portal` solutions to `PAC_DEPLOY_PORTAL_ENV_URL`.
+
+### Configure Payments API Values
+
+Add these values to the variable group:
+
+```text
+PLUGIN_MANAGED_IDENTITY_APP_ID
+PAYMENTS_API_CLIENT_SECRET
+```
+
+`PLUGIN_MANAGED_IDENTITY_APP_ID` is injected into the Core managed solution.
+
+`PAYMENTS_API_CLIENT_SECRET` is used to update the Portal Contoso Stripe API connection.
+
+### Configure Portal Connections
+
+Before running CD, create and connect these connections in the Portal development environment:
+
+```text
+Dataverse
+Contoso Stripe API
+```
+
+The CD pipeline looks for connected Portal environment connections matching these API prefixes:
+
+```text
+/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps
+/providers/Microsoft.PowerApps/apis/shared_contoso-5fcontoso-20stripe-20api
+```
+
+If connection IDs are already known, they can also be placed in `PAC_DEPLOY_CONFIG` under the Portal deployment settings connection references.
+
+### Configure PAC_DEPLOY_CONFIG
+
+Add `PAC_DEPLOY_CONFIG` to the variable group as JSON. It should contain deployment settings for each solution that needs environment settings, connection references, or data imports.
+
+Expected top-level keys:
+
+```text
+ContosoRealEstateCustomControls
+ContosoRealEstateCore
+ContosoRealEstatePortal
+```
+
+Each solution can include these sections:
+
+```json
+{
+	"ContosoRealEstateCore": {
+		"environmentSettings": {},
+		"deploymentSettings": {},
+		"data": []
+	},
+	"ContosoRealEstatePortal": {
+		"environmentSettings": {},
+		"deploymentSettings": {
+			"ConnectionReferences": []
+		},
+		"data": []
+	}
+}
+```
+
+Keep this JSON valid and avoid trailing commas. If the value becomes too large for a variable group variable, move the JSON into a secure file or repository file and update the CD pipeline to read it from that location.
+
+### Commit and Push the CD Pipeline File
+
+From the local repository root:
+
+```powershell
+git status --short
+git add azure-pipelines-cd.yml docs/azure-devops/README.md
+git commit -m "Add Azure DevOps CD pipeline"
+git push azure main
+```
+
+### Create the CD Pipeline
+
+To create the CD pipeline in Azure DevOps:
+
+1. Open `https://dev.azure.com/icsudevopslab/contoso-real-estate`.
+2. Go to **Pipelines**.
+3. Select **New pipeline**.
+4. Select **Azure Repos Git**.
+5. Select the `contoso-real-estate` repository.
+6. Select **Existing Azure Pipelines YAML file**.
+7. Choose `/azure-pipelines-cd.yml` from the `main` branch.
+8. Save the pipeline.
+9. Rename the pipeline to `contoso-real-estate-cd`.
+
+### Run the First Development Deployment
+
+Before running CD, make sure CI has completed successfully and published the `solution-packages` artifact.
+
+To run CD:
+
+1. Open the `contoso-real-estate-cd` pipeline.
+2. Select **Run pipeline**.
+3. Select the CI run to use for the `ci` pipeline resource if Azure DevOps prompts for a resource version.
+4. Keep `stageAndUpgrade` set to `true` for the normal import path.
+5. Start the run.
+
+During the first run, verify these steps:
+
+1. The pipeline downloads the `solution-packages` artifact.
+2. The Power Platform CLI installer succeeds.
+3. The Core target authenticates to `PAC_DEPLOY_CORE_ENV_URL`.
+4. The Portal target authenticates to `PAC_DEPLOY_PORTAL_ENV_URL`.
+5. All five solution imports run in sequence.
+6. Portal connection references resolve successfully.
+7. Any configured data imports complete successfully.
+
+### Add Testing and Production Later
+
+After development deployment works reliably, add separate variable groups and environments for testing and production:
+
+```text
+contoso-real-estate-cd-testing
+contoso-real-estate-cd-production
+testing
+production
+```
+
+Add approval checks to `testing` and `production` from **Pipelines** > **Environments** before enabling those stages.
+
 ## Notes
 
 - Pushing to Azure Repos does not remove or modify the existing GitHub remotes.
 - GitHub Actions workflows under `.github/workflows/` are not automatically converted to Azure DevOps Pipelines.
-- The initial Azure DevOps pipeline is CI only. Deployment stages can be added separately after the CI pipeline is running reliably.
+- The initial Azure DevOps CD pipeline deploys only development. Add testing and production after development has been validated.
