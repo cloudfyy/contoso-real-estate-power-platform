@@ -173,7 +173,7 @@ function Get-ConnectionId {
             return [string]$configuredConnection.ConnectionId
         }
 
-        throw "Configured connection id '$($configuredConnection.ConnectionId)' for '$LogicalName' was not found in '$env:PAC_DEPLOY_ENV_URL'. Re-run scripts/azure-devops/configure-cd-variable-group.ps1 or fix PAC_DEPLOY_CONFIG."
+        throw "Configured connection id '$($configuredConnection.ConnectionId)' for '$LogicalName' was not found in '$env:PAC_DEPLOY_ENV_URL'. Ensure the connection exists in the Portal environment and is shared with the PAC deployment application user, then re-run scripts/azure-devops/configure-cd-variable-group.ps1 or fix PAC_DEPLOY_CONFIG."
     }
 
     $connectionOutput = pac connection list --environment $env:PAC_DEPLOY_ENV_URL

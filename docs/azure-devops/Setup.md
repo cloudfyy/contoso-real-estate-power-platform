@@ -471,6 +471,8 @@ The caller with object id '<object-id>' does not have the minimum required permi
 
 To fix this, grant the deployment application user access to the connection in the Portal environment, or recreate the Contoso Stripe API connection using the same deployment application that runs the CD pipeline.
 
+The same access requirement applies to the Dataverse connection used by `contoso_PortalBotQueries`. If the CD pipeline reports that a configured connection id for `contoso_PortalBotQueries` was not found, the connection id is stale, belongs to a different environment, or the deployment application user cannot see the connection. Share the Dataverse connection with the deployment application user, or regenerate `PAC_DEPLOY_CONFIG` after creating the connection in the correct Portal environment.
+
 The CD pipeline looks for connected Portal environment connections matching these API prefixes:
 
 ```text
