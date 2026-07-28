@@ -100,13 +100,12 @@ The CI pipeline is based on the existing GitHub validation and release build con
 - Restores and builds the Payments API solution in `Release` configuration.
 - Compiles the Bicep entry template at `infra/main.bicep`.
 - Builds all Power Platform solution packages by running `scripts/build-release-packages.ps1 -Solution All -Clean`.
-- Runs Power Platform Checker against the generated unmanaged solution ZIP files.
 - Publishes generated solution ZIP files as the `solution-packages` pipeline artifact.
 - Publishes the compiled infrastructure template as the `infra` pipeline artifact.
 
 ### Required CI Configuration
 
-The CI pipeline requires access to the Azure Repos Git repository, permission to run Microsoft-hosted agents, and a Power Platform service connection for Solution Checker.
+The initial CI pipeline does not require Azure service connections, deployment environments, variable groups, or secrets. It only needs access to the Azure Repos Git repository and permission to run Microsoft-hosted agents.
 
 Before creating the pipeline, confirm these settings in Azure DevOps:
 
@@ -118,20 +117,6 @@ Before creating the pipeline, confirm these settings in Azure DevOps:
 6. Go to **Project settings** > **Repositories**.
 7. Select the `contoso-real-estate` repository.
 8. Confirm that the pipeline creator has at least read permission on the repository.
-
-### Configure the Power Platform Checker Service Connection
-
-Install the Microsoft Power Platform Build Tools extension if it is not already installed. Then create a Power Platform service connection for Solution Checker:
-
-1. Go to **Project settings** > **Service connections**.
-2. Select **New service connection**.
-3. Choose **Power Platform**.
-4. Use service principal authentication.
-5. Point the connection to the Core development Dataverse environment used for build validation.
-6. Name the service connection `contoso-real-estate-solution-checker`.
-7. Grant the CI pipeline permission to use the service connection.
-
-The CI YAML references this name through the `powerPlatformCheckerServiceConnection` variable. If you choose a different service connection name, update that variable in `azure-pipelines.yml` or override it in the Azure DevOps pipeline variables.
 
 The CI pipeline uses `windows-latest` because the Power Platform solution build depends on .NET/MSBuild behavior that matches the existing GitHub workflow. The pipeline installs .NET `10.0.x` by using the Azure Pipelines `UseDotNet@2` task.
 
