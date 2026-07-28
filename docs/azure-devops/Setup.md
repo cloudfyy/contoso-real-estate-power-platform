@@ -478,6 +478,8 @@ The CD pipeline looks for connected Portal environment connections matching thes
 /providers/Microsoft.PowerApps/apis/shared_contoso-5fcontoso-20stripe-20api
 ```
 
+If the Portal deployment fails while updating the Stripe API connection but the error says `under API 'shared_commondataserviceforapps'`, the `contoso_StripeAPI` entry in `PAC_DEPLOY_CONFIG` is pointing to the Dataverse connection instead of the Stripe API connection. Re-run `scripts/azure-devops/configure-cd-variable-group.ps1` and select the connected Contoso Stripe API connection, or manually correct the `contoso_StripeAPI.ConnectionId` value in the variable group.
+
 If connection IDs are already known, they can also be placed in `PAC_DEPLOY_CONFIG` under the Portal deployment settings connection references.
 
 ### Configure PAC_DEPLOY_CONFIG

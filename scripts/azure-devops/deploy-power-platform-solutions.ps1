@@ -146,8 +146,34 @@ function Get-ConnectionId {
 
     $configuredConnection = $PortalSettings.ConnectionReferences | Where-Object { $_.LogicalName -eq $LogicalName } | Select-Object -First 1
     if ($null -ne $configuredConnection -and -not [string]::IsNullOrWhiteSpace([string]$configuredConnection.ConnectionId)) {
-        Write-Host "Using configured connection id for $DisplayName." -ForegroundColor Green
-        return [string]$configuredConnection.ConnectionId
+        $connectionOutput = pac connection list --environment $env:PAC_DEPLOY_ENV_URL
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to list Power Platform connections for '$env:PAC_DEPLOY_ENV_URL'."
+        }
+
+        foreach ($line in $connectionOutput) {
+            $trimmedLine = ([string]$line).Trim()
+            if ($trimmedLine -notmatch '^(?<Id>[a-fA-F0-9]{32})\s+(?<Name>.*?)\s+(?<ApiId>/providers/Microsoft\.PowerApps/apis/\S+)\s+(?<Status>\S+)\s*$') {
+                continue
+            }
+
+            if ($matches.Id -ne [string]$configuredConnection.ConnectionId) {
+                continue
+            }
+
+            if (-not $matches.ApiId.StartsWith($ApiIdPrefix)) {
+                throw "Configured connection id '$($configuredConnection.ConnectionId)' for '$LogicalName' points to API '$($matches.ApiId)', but '$DisplayName' requires API prefix '$ApiIdPrefix'. Re-run scripts/azure-devops/configure-cd-variable-group.ps1 or fix PAC_DEPLOY_CONFIG."
+            }
+
+            if ($matches.Status -ne 'Connected') {
+                throw "Configured connection id '$($configuredConnection.ConnectionId)' for '$LogicalName' is '$($matches.Status)'. Reconnect it in the Portal environment, then rerun this deployment."
+            }
+
+            Write-Host "Using configured connection id for $DisplayName." -ForegroundColor Green
+            return [string]$configuredConnection.ConnectionId
+        }
+
+        throw "Configured connection id '$($configuredConnection.ConnectionId)' for '$LogicalName' was not found in '$env:PAC_DEPLOY_ENV_URL'. Re-run scripts/azure-devops/configure-cd-variable-group.ps1 or fix PAC_DEPLOY_CONFIG."
     }
 
     $connectionOutput = pac connection list --environment $env:PAC_DEPLOY_ENV_URL
