@@ -278,14 +278,22 @@ function Set-AzureDevOpsVariable {
         return
     }
 
-    InvokeExternalCommand -CommandDescription $commandDescription -ScriptBlock {
-        az pipelines variable-group variable $commandName `
-            --organization $OrganizationUrl `
-            --project $Project `
-            --group-id $GroupId `
-            --name $Name `
-            --value $Value `
-            --output none
+    $valueFilePath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "azure-devops-variable-$Name-$([System.Guid]::NewGuid()).txt"
+    try {
+        [System.IO.File]::WriteAllText($valueFilePath, $Value, [System.Text.UTF8Encoding]::new($false))
+
+        InvokeExternalCommand -CommandDescription $commandDescription -ScriptBlock {
+            az pipelines variable-group variable $commandName `
+                --organization $OrganizationUrl `
+                --project $Project `
+                --group-id $GroupId `
+                --name $Name `
+                --value "@$valueFilePath" `
+                --output none
+        }
+    }
+    finally {
+        Remove-Item -Path $valueFilePath -Force -ErrorAction SilentlyContinue
     }
 }
 

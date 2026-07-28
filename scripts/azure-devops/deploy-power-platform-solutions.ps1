@@ -45,7 +45,12 @@ if (-not (Test-Path -Path $ArtifactRoot)) {
 }
 
 New-Item -ItemType Directory -Path $DeploymentRoot -Force > $null
-$configObj = $env:PAC_DEPLOY_CONFIG | ConvertFrom-Json
+try {
+    $configObj = $env:PAC_DEPLOY_CONFIG | ConvertFrom-Json
+}
+catch {
+    throw "PAC_DEPLOY_CONFIG is not valid JSON. Re-run scripts/azure-devops/configure-cd-variable-group.ps1 or replace the variable group value with strict JSON that keeps double quotes around property names and string values. $($_.Exception.Message)"
+}
 
 if ($ValidateOnly) {
     Write-Host 'CD deployment configuration is valid.' -ForegroundColor Green
