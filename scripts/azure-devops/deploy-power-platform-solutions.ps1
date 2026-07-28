@@ -40,6 +40,10 @@ if ([string]::IsNullOrWhiteSpace($env:OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)) {
     Write-Host 'OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID is not configured. Continuing without override.' -ForegroundColor Yellow
 }
 
+if ($null -eq (Get-Command pac -ErrorAction SilentlyContinue)) {
+    throw "Power Platform CLI 'pac' was not found on PATH. Ensure the Azure DevOps pipeline runs PowerPlatformToolInstaller@2 and prepends the installed PAC CLI directory before invoking this script."
+}
+
 if (-not (Test-Path -Path $ArtifactRoot)) {
     throw "Solution package artifact was not found at '$ArtifactRoot'."
 }
