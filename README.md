@@ -33,6 +33,8 @@ Contoso Real Estate is segmented into 3 solutions:
 
 ## ✅Getting Started
 
+Review the consolidated prerequisites in [docs/prerequisites.md](./docs/prerequisites.md) before setting up the development workstation, build tools, Azure resources, Power Platform environments, or CI/CD pipelines.
+
 > [!NOTE]
 > For a full end-to-end set of instructions on how to install prerequisites, clone, build, deploy, and test the solutions, refer to [full-development-setup-instructions.md](./docs/00-full-development-setup-instructions.md).
 

@@ -128,7 +128,7 @@ From the local repository root:
 
 ```powershell
 git status --short
-git add azure-pipelines.yml docs/azure-devops/README.md
+git add azure-pipelines.yml docs/azure-devops/Setup.md
 git commit -m "Add Azure DevOps CI pipeline"
 git push azure main
 ```
@@ -214,6 +214,37 @@ The CD pipeline performs these deployment steps:
 - Imports each managed solution with `pac solution import`.
 - Imports configured data files by using `pac data import`.
 
+The deployment logic is implemented in:
+
+```text
+scripts/azure-devops/deploy-power-platform-solutions.ps1
+```
+
+The YAML file is responsible for pipeline orchestration only: selecting the CI artifact, installing PAC, passing variables from the variable group, validating configuration, and calling the deployment script once per solution.
+
+The CD pipeline intentionally uses multiple Azure DevOps steps:
+
+- `Validate CD configuration`
+- `Deploy core / ContosoRealEstateCustomControls`
+- `Deploy core / ContosoRealEstateCore`
+- `Deploy portal / ContosoRealEstateCustomControls`
+- `Deploy portal / ContosoRealEstateCore`
+- `Deploy portal / ContosoRealEstatePortal`
+
+This keeps the deployment order explicit and makes failures easier to locate in the pipeline run log.
+
+The PowerShell script is split into these responsibilities:
+
+- Validates all required deployment variables.
+- Copies solution ZIP files from the downloaded CI artifact into a deployment working folder.
+- Authenticates PAC to the Core or Portal Power Platform environment.
+- Updates Power Platform environment settings from `PAC_DEPLOY_CONFIG`.
+- Resolves Portal connection references for Dataverse and Contoso Stripe API.
+- Updates the Contoso Stripe API connection with `PAYMENTS_API_CLIENT_SECRET`.
+- Injects managed identity and tenant settings into Core and Portal managed solution packages.
+- Imports managed solutions with `pac solution import`.
+- Imports configured data files with `pac data import`.
+
 The first version deploys these solutions sequentially:
 
 ```text
@@ -263,7 +294,13 @@ Path:
 
 ### Create the Development Environment
 
-Create an Azure DevOps environment for development deployments:
+The Azure DevOps CD setup script creates the deployment environment automatically when it is missing:
+
+```text
+development
+```
+
+If you prefer to create it manually, create an Azure DevOps environment for development deployments:
 
 1. Go to **Pipelines** > **Environments**.
 2. Select **New environment**.
@@ -273,24 +310,74 @@ Create an Azure DevOps environment for development deployments:
 
 Do not add approval checks to `development` for the first run. Add approvals later for `testing` and `production`.
 
-### Create the Development Variable Group
+### Generate the Development Variable Group
 
-Create this Azure DevOps variable group:
+The repository includes a helper script that creates or updates the Azure DevOps CD variable group:
+
+```text
+scripts/azure-devops/configure-cd-variable-group.ps1
+```
+
+Run it from the repository root after `azd provision` has completed and after the Portal environment has the required Dataverse and Contoso Stripe API connections:
+
+```powershell
+./scripts/azure-devops/configure-cd-variable-group.ps1 `
+	-OrganizationUrl 'https://dev.azure.com/icsudevopslab' `
+	-Project 'contoso-real-estate' `
+	-VariableGroupName 'contoso-real-estate-cd-development' `
+	-DeploymentEnvironmentName 'development'
+```
+
+The script reads Azure deployment outputs from `.azure/<environment>/.env`, lets you select the Core and Portal Dataverse environments, lets you select the Power Pages site, generates `PAC_DEPLOY_CONFIG`, reads the Payments API client secret, creates the Azure DevOps deployment environment when it is missing, creates or reuses the PAC deployment service principal, reads the existing Entra app client secret used by the Azure DevOps CD pipeline for PAC CLI authentication, adds the application user to both Dataverse environments, and writes the Azure DevOps variable group values.
+
+Prerequisites on the local machine:
+
+```text
+az
+az extension add --name azure-devops
+pac
+```
+
+Sign in before running the script:
+
+```powershell
+az login
+az devops login --organization https://dev.azure.com/icsudevopslab
+pac auth create
+```
+
+To pass known values instead of selecting them interactively:
+
+```powershell
+./scripts/azure-devops/configure-cd-variable-group.ps1 `
+	-CorePacDeployEnvUrl 'https://your-core.crm.dynamics.com' `
+	-PortalPacDeployEnvUrl 'https://your-portal.crm.dynamics.com' `
+	-PortalUrl 'https://your-site.powerappsportals.com'
+```
+
+The script does not create Entra client secrets. Create or rotate the Azure DevOps CD PAC CLI Entra app client secret outside this script, then pass it explicitly:
+
+```powershell
+./scripts/azure-devops/configure-cd-variable-group.ps1 `
+	-PacDeployClientId '<application-client-id>' `
+	-PacDeployClientSecret '<application-client-secret>'
+```
+
+You can also provide the secret through the current process environment:
+
+```powershell
+$env:PAC_DEPLOY_CLIENT_SECRET = '<application-client-secret>'
+./scripts/azure-devops/configure-cd-variable-group.ps1 `
+	-PacDeployClientId '<application-client-id>'
+```
+
+The target Azure DevOps variable group is:
 
 ```text
 contoso-real-estate-cd-development
 ```
 
-Path:
-
-1. Go to **Pipelines** > **Library**.
-2. Select **Variable group**.
-3. Name it `contoso-real-estate-cd-development`.
-4. Add the variables listed below.
-5. Select **Pipeline permissions**.
-6. Allow the CD pipeline to use the variable group.
-
-Non-secret variables:
+The script writes these non-secret variables:
 
 ```text
 PAC_DEPLOY_AZURE_TENANT_ID
@@ -302,7 +389,7 @@ PAC_DEPLOY_CONFIG
 OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID
 ```
 
-Secret variables:
+The script writes these secret variables:
 
 ```text
 PAC_DEPLOY_CLIENT_SECRET
@@ -310,6 +397,15 @@ PAYMENTS_API_CLIENT_SECRET
 ```
 
 `OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID` is optional. Leave it empty unless the target environment needs a managed identity override.
+
+If you prefer to configure the variable group manually, use this path:
+
+1. Go to **Pipelines** > **Library**.
+2. Select **Variable group**.
+3. Name it `contoso-real-estate-cd-development`.
+4. Add the variables listed below.
+5. Select **Pipeline permissions**.
+6. Allow the CD pipeline to use the variable group.
 
 ### Prepare the Entra Application
 
@@ -415,7 +511,7 @@ From the local repository root:
 
 ```powershell
 git status --short
-git add azure-pipelines-cd.yml docs/azure-devops/README.md
+git add azure-pipelines-cd.yml docs/azure-devops/Setup.md
 git commit -m "Add Azure DevOps CD pipeline"
 git push azure main
 ```
@@ -452,9 +548,9 @@ During the first run, verify these steps:
 2. The Power Platform CLI installer succeeds.
 3. The Core target authenticates to `PAC_DEPLOY_CORE_ENV_URL`.
 4. The Portal target authenticates to `PAC_DEPLOY_PORTAL_ENV_URL`.
-5. All five solution imports run in sequence.
-6. Portal connection references resolve successfully.
-7. Any configured data imports complete successfully.
+5. Each solution deployment step runs in sequence.
+6. Portal connection references resolve successfully during `Deploy portal / ContosoRealEstatePortal`.
+7. Any configured data imports complete successfully in the related solution deployment step.
 
 ### Add Testing and Production Later
 
