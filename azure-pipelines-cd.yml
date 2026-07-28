@@ -48,7 +48,7 @@ stages:
                     $pacCommand = Get-Command pac -ErrorAction Stop
                     $pacPath = if ($pacCommand.Source) { $pacCommand.Source } else { $pacCommand.Path }
                     Write-Host "Power Platform CLI: $pacPath"
-                    pac --version
+                    pac help
                   displayName: Resolve Power Platform CLI
 
                 - pwsh: |
