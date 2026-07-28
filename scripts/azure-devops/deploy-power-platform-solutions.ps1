@@ -30,13 +30,21 @@ $requiredVariables = @(
     'PAC_DEPLOY_CONFIG'
 )
 
+function Test-ConfiguredOptionalValue {
+    param (
+        [string]$Value
+    )
+
+    return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -notmatch '^\$\([^)]+\)$'
+}
+
 foreach ($name in $requiredVariables) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
         throw "$name is not configured."
     }
 }
 
-if ([string]::IsNullOrWhiteSpace($env:OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)) {
+if (-not (Test-ConfiguredOptionalValue -Value $env:OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)) {
     Write-Host 'OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID is not configured. Continuing without override.' -ForegroundColor Yellow
 }
 
@@ -220,12 +228,12 @@ function Invoke-DeploymentSettingsInjection {
         tenantId = $env:PAC_DEPLOY_AZURE_TENANT_ID
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($env:OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)) {
+    if (Test-ConfiguredOptionalValue -Value $env:OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID) {
         $scriptArguments.overridePluginManagedIdentityId = $env:OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID
     }
 
     & './src/core/solution/deployment-scripts/inject-configuration-into-solution.ps1' @scriptArguments
-    if ($LASTEXITCODE -ne 0) {
+    if (-not $?) {
         throw "Deployment settings injection failed for '$SolutionName'."
     }
 }
