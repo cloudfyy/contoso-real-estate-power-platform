@@ -44,11 +44,11 @@ stages:
                     DefaultVersion: true
 
                 - pwsh: |
-                    $arguments = @(
-                      '-ArtifactRoot', '$(Pipeline.Workspace)/ci/solution-packages',
-                      '-DeploymentRoot', '$(Pipeline.Workspace)/deploy',
-                      '-ValidateOnly'
-                    )
+                    $arguments = @{
+                      ArtifactRoot = '$(Pipeline.Workspace)/ci/solution-packages'
+                      DeploymentRoot = '$(Pipeline.Workspace)/deploy'
+                      ValidateOnly = $true
+                    }
 
                     ./scripts/azure-devops/deploy-power-platform-solutions.ps1 @arguments
                   displayName: Validate CD configuration
@@ -64,14 +64,14 @@ stages:
                     OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: $(OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)
 
                 - pwsh: |
-                    $arguments = @(
-                      '-ArtifactRoot', '$(Pipeline.Workspace)/ci/solution-packages',
-                      '-DeploymentRoot', '$(Pipeline.Workspace)/deploy',
-                      '-TargetName', 'core',
-                      '-SolutionName', 'ContosoRealEstateCustomControls'
-                    )
+                    $arguments = @{
+                      ArtifactRoot = '$(Pipeline.Workspace)/ci/solution-packages'
+                      DeploymentRoot = '$(Pipeline.Workspace)/deploy'
+                      TargetName = 'core'
+                      SolutionName = 'ContosoRealEstateCustomControls'
+                    }
                     if ([System.Convert]::ToBoolean('${{ parameters.stageAndUpgrade }}')) {
-                      $arguments += '-StageAndUpgrade'
+                      $arguments.StageAndUpgrade = $true
                     }
 
                     ./scripts/azure-devops/deploy-power-platform-solutions.ps1 @arguments
@@ -88,14 +88,14 @@ stages:
                     OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: $(OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)
 
                 - pwsh: |
-                    $arguments = @(
-                      '-ArtifactRoot', '$(Pipeline.Workspace)/ci/solution-packages',
-                      '-DeploymentRoot', '$(Pipeline.Workspace)/deploy',
-                      '-TargetName', 'core',
-                      '-SolutionName', 'ContosoRealEstateCore'
-                    )
+                    $arguments = @{
+                      ArtifactRoot = '$(Pipeline.Workspace)/ci/solution-packages'
+                      DeploymentRoot = '$(Pipeline.Workspace)/deploy'
+                      TargetName = 'core'
+                      SolutionName = 'ContosoRealEstateCore'
+                    }
                     if ([System.Convert]::ToBoolean('${{ parameters.stageAndUpgrade }}')) {
-                      $arguments += '-StageAndUpgrade'
+                      $arguments.StageAndUpgrade = $true
                     }
 
                     ./scripts/azure-devops/deploy-power-platform-solutions.ps1 @arguments
@@ -112,14 +112,14 @@ stages:
                     OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: $(OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)
 
                 - pwsh: |
-                    $arguments = @(
-                      '-ArtifactRoot', '$(Pipeline.Workspace)/ci/solution-packages',
-                      '-DeploymentRoot', '$(Pipeline.Workspace)/deploy',
-                      '-TargetName', 'portal',
-                      '-SolutionName', 'ContosoRealEstateCustomControls'
-                    )
+                    $arguments = @{
+                      ArtifactRoot = '$(Pipeline.Workspace)/ci/solution-packages'
+                      DeploymentRoot = '$(Pipeline.Workspace)/deploy'
+                      TargetName = 'portal'
+                      SolutionName = 'ContosoRealEstateCustomControls'
+                    }
                     if ([System.Convert]::ToBoolean('${{ parameters.stageAndUpgrade }}')) {
-                      $arguments += '-StageAndUpgrade'
+                      $arguments.StageAndUpgrade = $true
                     }
 
                     ./scripts/azure-devops/deploy-power-platform-solutions.ps1 @arguments
@@ -136,14 +136,14 @@ stages:
                     OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: $(OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)
 
                 - pwsh: |
-                    $arguments = @(
-                      '-ArtifactRoot', '$(Pipeline.Workspace)/ci/solution-packages',
-                      '-DeploymentRoot', '$(Pipeline.Workspace)/deploy',
-                      '-TargetName', 'portal',
-                      '-SolutionName', 'ContosoRealEstateCore'
-                    )
+                    $arguments = @{
+                      ArtifactRoot = '$(Pipeline.Workspace)/ci/solution-packages'
+                      DeploymentRoot = '$(Pipeline.Workspace)/deploy'
+                      TargetName = 'portal'
+                      SolutionName = 'ContosoRealEstateCore'
+                    }
                     if ([System.Convert]::ToBoolean('${{ parameters.stageAndUpgrade }}')) {
-                      $arguments += '-StageAndUpgrade'
+                      $arguments.StageAndUpgrade = $true
                     }
 
                     ./scripts/azure-devops/deploy-power-platform-solutions.ps1 @arguments
@@ -160,14 +160,14 @@ stages:
                     OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID: $(OVERRIDE_PLUGIN_MANAGED_IDENTITY_ID)
 
                 - pwsh: |
-                    $arguments = @(
-                      '-ArtifactRoot', '$(Pipeline.Workspace)/ci/solution-packages',
-                      '-DeploymentRoot', '$(Pipeline.Workspace)/deploy',
-                      '-TargetName', 'portal',
-                      '-SolutionName', 'ContosoRealEstatePortal'
-                    )
+                    $arguments = @{
+                      ArtifactRoot = '$(Pipeline.Workspace)/ci/solution-packages'
+                      DeploymentRoot = '$(Pipeline.Workspace)/deploy'
+                      TargetName = 'portal'
+                      SolutionName = 'ContosoRealEstatePortal'
+                    }
                     if ([System.Convert]::ToBoolean('${{ parameters.stageAndUpgrade }}')) {
-                      $arguments += '-StageAndUpgrade'
+                      $arguments.StageAndUpgrade = $true
                     }
 
                     ./scripts/azure-devops/deploy-power-platform-solutions.ps1 @arguments
