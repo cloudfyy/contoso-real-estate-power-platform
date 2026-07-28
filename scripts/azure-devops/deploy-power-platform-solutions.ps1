@@ -200,7 +200,7 @@ function Resolve-PortalConnectionReferences {
         --application-id $env:PLUGIN_MANAGED_IDENTITY_APP_ID `
         --client-secret $env:PAYMENTS_API_CLIENT_SECRET
     if ($LASTEXITCODE -ne 0) {
-        throw 'Failed to update the Contoso Stripe API connection with the Payments API client secret.'
+        throw "Failed to update the Contoso Stripe API connection with the Payments API client secret. Ensure the PAC deployment application user has permission to update connection '$($connectionIds.contoso_StripeAPI)' in '$env:PAC_DEPLOY_ENV_URL', or create the Contoso Stripe API connection using that deployment application before rerunning CD."
     }
 
     foreach ($connectionReference in $portalSettings.ConnectionReferences) {

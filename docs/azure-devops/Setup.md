@@ -463,6 +463,14 @@ Dataverse
 Contoso Stripe API
 ```
 
+The PAC deployment application user must be able to update the Contoso Stripe API connection. The CD pipeline updates that connection with `PAYMENTS_API_CLIENT_SECRET` before importing the Portal solution. If the connection is owned by a user account and the deployment application does not have access, the Portal deployment fails with a message similar to:
+
+```text
+The caller with object id '<object-id>' does not have the minimum required permission to perform the requested operation on connection '<connection-id>'.
+```
+
+To fix this, grant the deployment application user access to the connection in the Portal environment, or recreate the Contoso Stripe API connection using the same deployment application that runs the CD pipeline.
+
 The CD pipeline looks for connected Portal environment connections matching these API prefixes:
 
 ```text
