@@ -46,21 +46,22 @@ stages:
                 - pwsh: |
                     $pacCommand = Get-Command pac -ErrorAction SilentlyContinue
                     if ($null -eq $pacCommand) {
-                      $searchRoots = @(
-                        '$(Agent.ToolsDirectory)',
-                        '$(Agent.TempDirectory)'
-                      ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -Path $_) }
-
-                      if ($searchRoots.Count -gt 0) {
-                        $pacCommand = Get-ChildItem -Path $searchRoots -Filter pac.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                      dotnet tool update --global Microsoft.PowerApps.CLI.Tool
+                      if ($LASTEXITCODE -ne 0) {
+                        throw 'Power Platform CLI installation failed.'
                       }
-                    }
 
-                    if ($null -eq $pacCommand) {
-                      throw 'Power Platform CLI was not found after PowerPlatformToolInstaller@2 completed.'
+                      $dotnetToolsDirectory = Join-Path -Path $HOME -ChildPath '.dotnet/tools'
+                      Write-Host "##vso[task.prependpath]$dotnetToolsDirectory"
+                      $env:PATH = "$dotnetToolsDirectory;$env:PATH"
+                      $pacCommand = Get-Command pac -ErrorAction SilentlyContinue
                     }
 
                     $pacPath = if ($pacCommand.Source) { $pacCommand.Source } else { $pacCommand.FullName }
+                    if ([string]::IsNullOrWhiteSpace($pacPath)) {
+                      throw 'Power Platform CLI was not found after installation.'
+                    }
+
                     $pacDirectory = Split-Path -Path $pacPath -Parent
                     Write-Host "Power Platform CLI: $pacPath"
                     Write-Host "##vso[task.prependpath]$pacDirectory"
